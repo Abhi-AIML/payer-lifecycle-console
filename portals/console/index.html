@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" style="display:none"></div>
+<script src="/shared.js"></script>
+<script>
+const COLUMNS = ["Benefit coding", "Provider", "Member / Enrollment", "Claims", "Billing", "Customer service"];
+const TILES = [
+  { id: "benefits", href: "/benefits/", col: 0, row: 0, ic: "doc", name: "Benefit Plan Interpretation & Coding", what: "Three AI agents turn plan documents into verified, cited, system-ready rules.", state: "built", live: true },
+  { id: "pa", col: 0, row: 1, ic: "shield", name: "Prior Auth & Medical Necessity Flagging", what: "Checks requests against benefit rules and criteria, routes them, runs the SLA clock.", state: "planned" },
+  { id: "pasub", col: 1, row: 0, ic: "inbox", name: "Manual Prior Auth Submission Support", what: "AI-assisted intake and routing of authorization requests.", state: "planned" },
+  { id: "onboard", col: 1, row: 1, ic: "layers", name: "Provider Onboarding & Contract Management", what: "Captures contract terms from documents and loads them.", state: "planned" },
+  { id: "cob", col: 2, row: 0, span: true, ic: "scale", name: "COB Primary Determination", what: "Decides which coverage pays first when a member has more than one.", state: "planned" },
+  { id: "claims", href: "/claims/", col: 3, row: 0, ic: "receipt", name: "Claims Adjustments & Reprocessing", what: "Three agents read the bill, apply the published rules line by line, and explain every reduction with its clause.", state: "built", live: true },
+  { id: "denials", href: "/denials/", col: 3, row: 1, ic: "x", name: "Denial Mgmt, Redressal & Pre-emptive Edits", what: "Classifies each deduction, rechecks it against the published rules, and drafts an appeal only when there is something to contest.", state: "built", live: true },
+  { id: "invoice", col: 4, row: 0, ic: "receipt", name: "Manual Invoice Generation & Premium Reconciliation", what: "Generates invoices and reconciles premiums after retro enrolment and corrections.", state: "planned" },
+  { id: "payexc", col: 4, row: 1, ic: "inbox", name: "Payment Exception Triage & Routing", what: "Classifies emails and faxes about payment problems and routes them with SLAs.", state: "planned" },
+  { id: "appeals", col: 5, row: 0, span: true, ic: "users", name: "Appeals / Grievance Intake Processing", what: "Classifies incoming disputes, routes them and tracks response clocks.", state: "planned" }];
+const STATE_LABEL = { built: "Built", next: "In progress", planned: "Planned" };
+let META = null, K = null, panel = null;
+
+function tileHtml(t) {
+  return `<button class="tile ${t.state === "planned" ? "planned" : "built"}" style="grid-column:${t.col + 1};grid-row:${t.span ? "2 / span 2" : t.row + 2}" data-tile="${t.id}" aria-label="${esc(t.name)}, ${STATE_LABEL[t.state]}, high automation feasibility">
+    <div class="ti">${ico(t.ic)}${t.live ? `<span class="livepip">LIVE</span>` : ""}</div><b>${esc(t.name)}</b><span class="d">${esc(t.what)}</span>
+    <span class="foot"><span class="feas" title="High automation feasibility">High</span><span class="state">${STATE_LABEL[t.state]}</span></span></button>`;
+}
+
+function render() {
+  const m = META[MARKET];
+  const tests = K.latest_tests;
+  const kpis = [
+    [K.published_version ? `v${K.published_version}` : "None", "published rule set", K.published_version ? `${K.published_rules} approved rules` : "run the agents on the Benefit tile"],
+    [K.published_rules ? `${K.verified_rules}/${K.published_rules}` : "0", "rules verified in their source", "quote found, value in quote"],
+    [tests ? `${tests.passed}/${tests.total}` : "0", "validation tests passed", tests ? "latest run" : "no validation run yet"],
+    [K.claims.adjudicated, "claims adjudicated", `${K.claims.decided} decided · ${K.claims.appeals_open} appeals open`]];
+  $("#app").innerHTML = `${topbar([{ t: "Console" }], load)}
+  <section class="band"><div class="wrap"><div class="kicker" style="color:#8FB0F5;margin-bottom:10px">${esc(m.label)} view</div><h1>Payer operations console</h1>
+    <p>Every process from plan setup to appeal. All ten tiles are high-automation processes. Built tiles are ringed in green, planned ones are muted.</p></div></section>
+  <div class="wrap lift"><div class="kpis">${kpis.map(([n, l, s]) => `<div class="kpi"><div class="kn">${esc(n)}</div><div class="lab"><b>${esc(l)}</b><br>${esc(s)}</div></div>`).join("")}</div>
+  <div class="maphead"><div><h2>Automation heat-map</h2><p class="muted" style="margin:4px 0 0">Click a tile to open that process. ${esc(m.plan.scope_note)}</p></div>
+    <div class="right legend2"><span><i class="sw hi"></i>High automation feasibility</span><span><i class="sw ring"></i>Built or in progress</span><span><i class="sw dash"></i>Planned</span></div></div>
+  <div class="heat" role="list">${COLUMNS.map(c => `<div class="colhead">${c}</div>`).join("")}${TILES.map(tileHtml).join("")}</div>
+  <p class="small muted" style="margin:18px 0 60px">Figures above are computed from this session. State is held in memory and resets when the server restarts.</p></div>
+  ${panel ? scopePanel(TILES.find(t => t.id === panel)) : ""}`;
+  $$("[data-tile]").forEach(b => b.onclick = () => { const t = TILES.find(x => x.id === b.dataset.tile); if (t.href && t.state === "built") location.href = t.href + "?m=" + MARKET; else { panel = t.id; render(); } });
+  $$("[data-close]").forEach(b => b.onclick = () => { panel = null; render(); });
+}
+function scopePanel(t) {
+  return `<aside class="panel" role="dialog" aria-label="${esc(t.name)}"><div class="row"><span class="chip ${t.state === "planned" ? "mute" : "warn"}">${STATE_LABEL[t.state]}</span><button class="btn sm right" data-close>Close</button></div>
+  <h2 style="margin:16px 0 8px">${esc(t.name)}</h2><p>${esc(t.what)}</p><h3 style="margin-top:20px">Status</h3>
+  <p class="small muted">${t.state === "next" ? "Being built next. It reads the published rule set from the Benefit tile." : "Shown so the whole payer lifecycle is visible. Its scope card will list the manual pain points and the automation we would build."}</p></aside>`;
+}
+async function load() {
+  [META, K] = await Promise.all([api("/meta"), api(`/kpis?market=${MARKET}`)]);
+  render();
+}
+(async () => { try { await boot(); await load(); } catch (e) { if (e.message !== "wrong role" && e.message !== "Please sign in.") document.body.insertAdjacentHTML("afterbegin", `<div class="wrap" style="padding-block:30px">Could not load: ${esc(e.message)}</div>`); } })();
+</script>
+</body>
+</html>

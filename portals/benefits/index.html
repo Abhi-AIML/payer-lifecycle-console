@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" style="display:none"></div>
+<script src="/shared.js"></script>
+<script src="/module.js"></script>
+<script src="/pdfview.js"></script>
+<script>
+const SERVICE = { office_visit: "Office visit", physical_therapy: "Physical therapy", total_knee_replacement: "Total knee replacement", advanced_imaging: "Advanced imaging (MRI)",
+  cosmetic: "Cosmetic procedures", experimental: "Experimental treatments", cataract: "Cataract surgery", joint_replacement: "Joint replacement", cashless: "Cashless treatment",
+  preventive: "Preventive visits", initial: "All illnesses (initial)", non_medical: "Non-medical items" };
+const svc = k => SERVICE[k] || String(k || "").replace(/_/g, " ");
+const canEdit = () => ME && ME.role === "benefits_analyst";
+let META, K = null, SAMPLES = [], PUB = null, AI = null, RUN = null;
+const UI = { running: null, reveal: null, changeDoc: false, mode: "sample", picked: null, paste: "", file: null, inject: false, editing: null, tab: "model", showSource: false, showAllTests: false, collapse: undefined };
+
+/* ---------- formatting ---------- */
+function money(n) { const c = META[MARKET].currency; return c.symbol + Number(n).toLocaleString(c.locale, { maximumFractionDigits: 2 }); }
+function fmtVal(r) {
+  if (r.category === "proportionate_scope") return (r.decision || r.value) === "icu_exempt" ? "Room-linked charges, ICU not reduced" : "Room-linked charges, ICU reduced";
+  if (r.category === "non_payable") return (r.items || []).join(", ");
+  if (["prior_auth", "exclusion", "deductible_exempt"].includes(r.category)) return svc(r.service);
+  if (r.unit === "currency") return money(r.value) + (r.per ? ` per ${r.per}` : "");
+  if (r.unit === "pct") return r.value + "%";
+  if (r.unit === "days") return r.value >= 365 && r.value % 365 === 0 ? `${r.value / 365} years` : `${r.value} days`;
+  return String(r.value);
+}
+const ev = (ok, t) => `<span class="ev ${ok ? "ok" : "bad"}">${ico(ok ? "check" : "x")} ${esc(t)}</span>`;
+
+/* ---------- stage logic ---------- */
+const decided = () => RUN && RUN.rules.length && RUN.rules.every(r => r.status !== "proposed");
+const openRules = () => RUN ? RUN.rules.filter(r => r.status === "proposed").length : 0;
+function stepStates() {
+  const s = RUN ? RUN.stage : "none";
+  const done = [!!RUN, !!(RUN && RUN.interpret), !!(RUN && RUN.interpret && decided()), !!(RUN && RUN.configure), !!(RUN && RUN.validate), s === "approved"];
+  const cur = done.findIndex(d => !d);
+  return done.map((d, i) => ({ done: d, cur: i === (cur === -1 ? 5 : cur) && !d }));
+}
+const STEPS = [["Document", "Load a sample or upload"], ["Interpret", "Agent 1 reads it"], ["Review", "A person approves"], ["Configure & code", "Agent 2 builds it"], ["Validate", "Agent 3 tests it"], ["Publish", "Versioned rule set"]];
+
+/* ---------- agent log ---------- */
+function logHtml(key, log) {
+  const hide = UI.reveal === key ? ' style="display:none"' : "";
+  return `<div class="log" data-log="${key}" aria-label="Agent log">${log.map(s => `<div class="logstep ${s.status}"${hide}><span class="ic">${s.status === "ok" ? "✓" : s.status === "warn" ? "!" : "i"}</span><div><div class="t">${esc(s.step)}</div><div class="d">${esc(s.detail)}</div></div><span class="ms">${s.ms} ms</span></div>`).join("")}</div>`;
+}
+async function animateReveal(key) {
+  const steps = $$(`[data-log="${key}"] .logstep`), res = $(`[data-results="${key}"]`);
+  for (const s of steps) { s.style.display = ""; s.classList.add("reveal"); await sleep(420); }
+  if (res) { res.style.display = ""; res.classList.add("reveal"); }
+  UI.reveal = null;
+}
+function runButton(key, enabled, label) {
+  const running = UI.running === key;
+  return `<button class="btn primary runbtn" data-run="${key}" ${enabled && !UI.running ? "" : "disabled"} aria-label="Run ${esc(label)}">${running ? `<span class="spin"></span> Agent working…` : `${ico("play")} Run agent`}</button>`;
+}
+const resultsAttr = key => UI.reveal === key ? ' style="display:none"' : "";
+
+/* ---------- sections ---------- */
+function stepper() {
+  return `<div class="panel2"><div class="rail" style="grid-template-columns:repeat(6,1fr)" role="list">${stepStates().map((st, i) =>
+    `<div class="step ${st.done ? "done" : ""} ${st.cur ? "cur" : ""}" role="listitem"><span class="n">${st.done ? "✓" : i + 1}</span><b>${STEPS[i][0]}</b><span class="d">${STEPS[i][1]}</span></div>`).join("")}</div></div>`;
+}
+
+function documentCard() {
+  const samples = SAMPLES;
+  const picker = `<div class="docpick"><div class="small muted"><b>Sample documents</b> (synthetic). Click one, then load it.</div>
+    ${samples.map(s => `<button class="pick" data-pick="${s.id}" aria-pressed="${UI.picked === s.id}">${ico("doc")}<span><b>${esc(s.title)}</b><br><span class="small muted">${s.kind === "amendment" ? "Amendment to the base document" : "Base document"}</span></span>${s.kind === "amendment" ? chip("amendment", "warn") : chip("base", "blue")}</button>`).join("")}
+    <details ${UI.mode !== "sample" ? "open" : ""} id="more"><summary class="small" style="cursor:pointer;padding:6px 0"><b>Or use your own document</b> (upload a PDF, image or text file, or paste text)</summary>
+      <div class="stack" style="margin-top:10px"><label>Upload a file<input type="file" id="file" accept=".pdf,.txt,.md,image/*"></label>
+      <div class="small muted">${AI.live ? "PDFs and images are read by Gemini into text first. Rules are then verified against that text." : "PDF and image reading needs a Gemini key. Text files and pasted text work now."}${UI.file ? ` Selected: <b>${esc(UI.file.name)}</b>` : ""}</div>
+      <label>Or paste text<textarea id="paste" rows="5" placeholder="[Page 1]&#10;1.1 The annual deductible is $1,500 per member.">${esc(UI.paste)}</textarea></label></div></details>
+    <div class="row"><button class="btn primary" id="loaddoc" ${canEdit() ? "" : "disabled"}>${ico("upload")} Load document</button>${canEdit() ? "" : `<span class="small muted">Only a benefits analyst can load documents.</span>`}${RUN ? `<button class="btn" id="cancelchange">Keep the current document</button>` : ""}</div></div>`;
+  const summary = RUN ? `<div class="row" style="gap:10px"><b style="font-size:16px">${esc(RUN.title)}</b>${chip(RUN.kind === "amendment" ? "amendment" : "base document", RUN.kind === "amendment" ? "warn" : "blue")}${chip(RUN.source, "mute")}
+      <span class="small muted">${RUN.doc_meta.pages} page(s), ${RUN.doc_clauses.length} clauses${RUN.doc_meta.effective ? ", effective " + esc(RUN.doc_meta.effective) : ""}</span>
+      <span class="right row"><button class="btn sm primary" id="viewpdf">${ico("doc")} View document (PDF)</button><button class="btn sm" id="togglesrc">${UI.showSource ? "Hide" : "Show"} extracted text</button><button class="btn sm" id="changedoc">Load a different document</button></span></div>
+      ${(RUN.notes || []).map(n => `<div class="gate">${esc(n)}</div>`).join("")}
+      ${UI.showSource ? `<div class="doc" style="margin-top:14px;position:static;max-height:360px">${docHtml()}</div>` : ""}` : "";
+  return `<section class="agent ${RUN ? "done" : "cur"}"><header><span class="num-badge">${RUN ? "✓" : "1"}</span><div><h2>Document</h2><div class="small muted">Choose what the agents will read.</div></div></header>
+    <div class="body">${RUN && !UI.changeDoc ? summary : picker}</div></section>`;
+}
+function docHtml() {
+  let page = 0, out = "";
+  for (const c of RUN.doc_clauses) { if (c.page !== page) { page = c.page; out += `<div class="pg">Page ${page}</div>`; } out += `<p><b>${esc(c.clause)}</b>${esc(c.text)}</p>`; }
+  return out;
+}
+
+function ruleCard(r) {
+  const blocked = r.flags.some(f => f.severity === "block");
+  const status = r.status === "approved" ? `<span class="chip ok">${ico("check")} Approved</span>` : r.status === "rejected" ? `<span class="chip bad">Rejected</span>` : r.needs_decision && !r.decision ? `<span class="chip warn">Needs your decision</span>` : blocked ? `<span class="chip bad">Failed verification</span>` : `<span class="chip blue">Proposed</span>`;
+  const editing = UI.editing === r.id;
+  const numeric = ["deductible", "coinsurance_member_pct", "oop_max", "copay", "sum_insured", "room_rent_cap", "sub_limit", "waiting_period", "copay_pct"].includes(r.category);
+  return `<div class="rule ${r.status === "approved" ? "sel" : ""}" data-rule="${r.id}"><div><div class="nm">${esc(r.label)}</div><div class="row" style="gap:8px;margin-top:4px">${status}<button class="cite cite-btn" data-viewrule="${r.id}" title="Open the document at this clause" aria-label="Open the document at page ${r.page}, clause ${esc(r.clause)}">p.${r.page} · cl. ${esc(r.clause)} ↗</button>${r.edited ? chip("edited", "warn") : ""}</div></div>
+    <div class="val">${esc(fmtVal(r))}</div><div class="q">“${esc(r.quote)}”</div>
+    <div class="q" style="border-top:0;padding-top:0;display:flex;gap:16px;flex-wrap:wrap">${ev(r.evidence.quote_found, r.evidence.quote_found ? "Quote found in the document" : "Quote NOT found in the document")}${ev(r.evidence.value_in_quote, r.evidence.value_in_quote ? "Value appears in the quote" : "Value does NOT appear in the quote")}${ev(r.evidence.page_clause !== false, r.evidence.page_clause !== false ? "Quote sits in this page and clause" : "Quote is NOT in this page and clause")}</div>
+    ${r.flags.map(f => `<div class="notice" style="${f.severity === "block" ? "background:var(--rose-bg);color:var(--rose-ink)" : ""}">${esc(f.text)}</div>`).join("")}
+    ${r.needs_decision ? `<div class="notice"><b>${esc(r.ambiguity.title)}.</b> ${esc(r.ambiguity.message)}<div class="row" style="margin-top:10px;gap:18px">${r.ambiguity.options.map(o => `<label style="color:inherit;display:flex;gap:8px;align-items:center"><input type="radio" name="d_${r.id}" value="${o.value}" data-decision="${r.id}" ${r.decision === o.value ? "checked" : ""} ${canEdit() ? "" : "disabled"} style="width:auto;margin:0"> ${esc(o.label)}</label>`).join("")}</div></div>` : ""}
+    ${editing ? `<div class="acts"><input id="editval" type="number" step="any" value="${esc(r.value)}" style="max-width:180px;margin:0"><button class="btn sm primary" data-saveedit="${r.id}">Save value</button><button class="btn sm" data-canceledit>Cancel</button></div>` : ""}
+    <div class="acts"><button class="btn sm primary" data-rulestatus="${r.id}:${r.status === "approved" ? "proposed" : "approved"}" ${canEdit() ? "" : "disabled"}>${r.status === "approved" ? "Undo approval" : "Approve"}</button>
+      <button class="btn sm" data-rulestatus="${r.id}:${r.status === "rejected" ? "proposed" : "rejected"}" ${canEdit() ? "" : "disabled"}>${r.status === "rejected" ? "Undo reject" : "Reject"}</button>
+      ${numeric && !editing ? `<button class="btn sm" data-edit="${r.id}" ${canEdit() ? "" : "disabled"}>Edit value</button>` : ""}</div></div>`;
+}
+
+function interpretCard() {
+  const key = "interpret", ran = RUN && RUN.interpret, s = ran ? RUN.interpret.summary : null;
+  const collapsed = !!ran && (UI.collapse !== undefined ? UI.collapse : !!RUN.configure);
+  const diff = RUN && RUN.diff ? `<div class="panel2" style="margin-bottom:16px"><h3 style="margin-bottom:8px">What changed against the published version</h3><div class="scroll"><table class="tbl diff"><thead><tr><th>Rule</th><th>Published</th><th>This document</th><th>Source</th></tr></thead><tbody>
+      ${RUN.diff.map(d => `<tr><td>${esc(d.label)}</td><td class="old">${d.old ?? "—"}</td><td class="new">${d.new ?? "—"}</td><td><span class="cite">${d.new_clause ? "cl. " + esc(d.new_clause) : "removed"}</span></td></tr>`).join("") || `<tr><td colspan="4" class="muted">No rule values changed.</td></tr>`}</tbody></table></div></div>` : "";
+  const body = !RUN ? `<p class="muted">Load a document first.</p>` : UI.running === key ? `<p class="muted"><span class="spin dark"></span> The Interpretation Agent is reading the document…</p>`
+    : !ran ? `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It will classify the document, extract rules with their page, clause and exact quote, verify each quote against the source, and flag anything ambiguous.</p>`
+    : `${logHtml(key, RUN.interpret.log)}<div data-results="${key}"${resultsAttr(key)}>
+      <div class="kv" style="margin-bottom:16px"><div><b>${s.rules}</b><span>rules proposed</span></div><div><b>${s.verified}</b><span>passed the evidence check</span></div><div><b>${s.flagged}</b><span>failed it</span></div><div><b>${s.needs_decision}</b><span>need a decision</span></div>
+        <div><b>${RUN.interpret.extractor === "gemini" ? "Gemini" : "Fallback"}</b><span>${RUN.interpret.extractor === "gemini" ? "read by the live model" : "rule-based reader, no Gemini key"}</span></div></div>
+      ${s.missing_required.length ? `<div class="gate">Required rules not found: ${esc(s.missing_required.join(", "))}.</div>` : ""}${diff}
+      <div class="notice" style="background:var(--soft);color:var(--ink);margin-bottom:14px"><b>Where the page and clause come from.</b> They are read from the document itself: the page it sits on, and the clause number printed at the start of the clause. When a PDF is read by Gemini, Gemini copies them, and code then checks that the quote is in exactly that clause on exactly that page. Click any page and clause tag below to open the PDF with it highlighted.</div>
+      <div class="row" style="margin-bottom:12px"><h3>Review the proposed rules</h3><span class="small muted">${openRules()} still open${collapsed ? `, ${RUN.rules.filter(r => r.status === "approved").length} approved, ${RUN.rules.filter(r => r.status === "rejected").length} rejected` : ""}</span><span class="right row"><button class="btn sm" id="approveall" ${canEdit() && openRules() ? "" : "disabled"}>Approve all verified rules</button><button class="btn sm" id="togglerules">${collapsed ? `Show ${RUN.rules.length} rules` : "Hide rules"}</button></span></div>
+      ${collapsed ? "" : `<div class="rulegrid">${RUN.rules.map(ruleCard).join("")}</div>`}</div>`;
+  return `<section class="agent ${ran && decided() ? "done" : RUN && !ran ? "cur" : ran ? "cur" : "locked"}"><header><span class="num-badge">${ran && decided() ? "✓" : "2"}</span><div><h2>Interpretation Agent</h2><div class="small muted">Reads the document and proposes rules. Code verifies every quote and value.</div></div>
+    <span class="right">${runButton(key, canEdit() && RUN, "the Interpretation Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+const MAPCHIP = { mapped: ["ok", "Mapped"], one_to_many: ["warn", "One to many"], missing: ["bad", "Missing"], expired: ["bad", "Expired"], review: ["ai", "AI proposal"] };
+function configureCard() {
+  const key = "configure", ran = RUN && RUN.configure, ready = RUN && RUN.interpret && decided();
+  let body;
+  if (!RUN || !RUN.interpret) body = `<p class="muted">Run the Interpretation Agent and review its rules first.</p>`;
+  else if (UI.running === key) body = `<p class="muted"><span class="spin dark"></span> The Configuration &amp; Coding Agent is building the payload…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It takes only the <b>approved</b> rules, builds the standard benefit model and a system-ready payload, and maps services to codes using the effective-dated crosswalk.</p>${!ready ? `<div class="gate">Approve or reject every rule first. ${openRules()} still open.</div>` : ""}`;
+  else {
+    const c = RUN.configure, shown = { model: JSON.stringify((({ refs, ...m }) => m)(c.model), null, 2), csv: c.csv };
+    body = `${logHtml(key, c.log)}<div data-results="${key}"${resultsAttr(key)}>
+      <div class="row" style="margin-bottom:10px"><h3>Configuration payload</h3><span class="small muted">${c.fields.length} fields, each linked to its source rule</span><a class="btn sm right" href="/api/benefits/runs/${RUN.id}/payload.csv" download>${ico("download")} Download CSV</a></div>
+      <div class="tabs" role="tablist" style="margin-bottom:10px">${[["model", "Benefit model (JSON)"], ["fields", "Fields"], ["csv", "CSV"]].map(([k, l]) => `<button role="tab" aria-selected="${UI.tab === k}" data-tab="${k}">${l}</button>`).join("")}</div>
+      ${UI.tab === "fields" ? `<div class="scroll" style="max-height:320px"><table class="tbl"><thead><tr><th>Field</th><th>Value</th><th>Unit</th><th>Rule</th><th>Clause</th></tr></thead><tbody>${c.fields.map(f => `<tr><td class="mono">${esc(f.field)}</td><td>${esc(f.value)}</td><td>${esc(f.unit)}</td><td><span class="cite">${esc(f.source_rule)}</span></td><td><span class="cite">${esc(f.clause)}</span></td></tr>`).join("")}</tbody></table></div>` : `<pre class="code">${esc(shown[UI.tab])}</pre>`}
+      <div class="row" style="margin:18px 0 8px"><h3>Service-to-code mapping</h3><span class="small muted">${c.counts.mapped} mapped · ${c.counts.one_to_many} one-to-many · ${c.counts.missing} missing · ${c.counts.expired} expired${c.counts.review ? ` · ${c.counts.review} AI proposals` : ""}</span></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Service</th><th>Status</th><th>Codes valid on the effective date</th><th>Note</th><th></th></tr></thead><tbody>
+      ${c.mappings.map(m => `<tr><td><b>${esc(m.label)}</b></td><td>${chip(MAPCHIP[m.status][1], MAPCHIP[m.status][0])}</td><td>${m.codes.map(x => `<span class="cite" style="margin:0 4px 4px 0">${esc(x.system)} ${esc(x.code)}</span>`).join("") || "—"}${m.excluded.length ? `<div class="small muted">Superseded, excluded: ${m.excluded.map(x => esc(x.code)).join(", ")}</div>` : ""}</td><td class="small">${esc(m.note)}</td>
+        <td>${m.status === "mapped" ? "" : RUN.mappings_confirmed.includes(m.service) ? chip("Confirmed", "ok") : `<button class="btn sm" data-confirmmap="${esc(m.service)}" ${canEdit() ? "" : "disabled"}>Confirm</button>`}</td></tr>`).join("")}</tbody></table></div>
+      <p class="small muted" style="margin:10px 0 0">${esc(c.licensing_note)}</p></div>`;
+  }
+  return `<section class="agent ${ran ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "3"}</span><div><h2>Configuration &amp; Coding Agent</h2><div class="small muted">Builds the system-ready payload from approved rules and maps services to codes.</div></div>
+    <span class="right">${runButton(key, canEdit() && ready, "the Configuration and Coding Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function validateCard() {
+  const key = "validate", ran = RUN && RUN.validate, ready = RUN && RUN.configure;
+  let body;
+  if (!ready) body = `<p class="muted">Run the Configuration &amp; Coding Agent first.</p>`;
+  else if (UI.running === key) body = `<p class="muted"><span class="spin dark"></span> The Validation Agent is generating and running test scenarios…</p>`;
+  else {
+    const toggle = `<label style="display:flex;gap:10px;align-items:center;color:var(--ink);margin-bottom:12px"><input type="checkbox" id="inject" ${UI.inject ? "checked" : ""} style="width:auto;margin:0" ${canEdit() ? "" : "disabled"}> Simulate a keying error in the loaded configuration, to see the agent catch it</label>`;
+    if (!ran) body = `${toggle}<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It generates boundary-case scenarios, works out the expected result from the approved rules, runs the <b>loaded</b> configuration through the engine, and reports every difference.</p>`;
+    else {
+      const v = RUN.validate, pk = v.package, rows = UI.showAllTests ? v.results : v.results.filter(r => !r.pass).concat(v.results.filter(r => r.pass).slice(0, 6));
+      body = `${toggle}${logHtml(key, v.log)}<div data-results="${key}"${resultsAttr(key)}>
+        ${v.injected ? `<div class="gate" style="background:var(--rose-bg);color:var(--rose-ink)"><b>Deliberate fault:</b> ${esc(v.injected)}</div>` : ""}
+        <div class="kv" style="margin-bottom:16px"><div><b class="${pk.tests.failed ? "fail" : "pass"}">${pk.tests.passed}/${pk.tests.total}</b><span>scenarios matched the expected result</span></div><div><b>${pk.coverage_pct}%</b><span>of approved rules exercised</span></div>
+          <div><b>${pk.evidence_verified}/${pk.rules_approved}</b><span>approved rules verified in source</span></div><div><b>${pk.open_exceptions.length}</b><span>open exceptions</span></div></div>
+        ${pk.open_exceptions.length ? `<div class="panel2" style="margin-bottom:16px"><h3 style="margin-bottom:6px">Exceptions</h3>${pk.open_exceptions.map(e => `<div class="li"><span class="mk" style="background:${e.severity === "block" ? "var(--rose-bg)" : "var(--amber-bg)"};color:${e.severity === "block" ? "var(--rose-ink)" : "var(--amber-ink)"}">${e.severity === "block" ? "!" : "i"}</span><span>${esc(e.text)}</span></div>`).join("")}</div>` : ""}
+        <div class="scroll" style="max-height:380px"><table class="tbl"><thead><tr><th></th><th>Scenario</th><th>Rules</th><th class="num">Expected plan pays</th><th class="num">System plan pays</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td class="${r.pass ? "pass" : "fail"}">${r.pass ? "✓" : "✗"}</td><td>${esc(r.title)}${r.expected.reason ? ` <span class="cite">${esc(r.expected.reason)}</span>` : ""}</td><td>${r.rule_ids.map(x => `<span class="cite">${esc(x)}</span>`).join(" ")}</td><td class="num">${money(r.expected.plan)}</td><td class="num ${r.pass ? "" : "fail"}">${money(r.actual.plan)}</td></tr>`).join("")}</tbody></table></div>
+        <div class="row" style="margin-top:10px"><button class="btn sm" id="toggletests">${UI.showAllTests ? "Show failures and a sample" : `Show all ${v.results.length} scenarios`}</button><span class="small muted">Differences under 5 paise are treated as rounding.</span></div></div>`;
+    }
+  }
+  return `<section class="agent ${ran ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "4"}</span><div><h2>Validation Agent</h2><div class="small muted">Generates tests from the rules and checks what was actually loaded.</div></div>
+    <span class="right">${runButton(key, canEdit() && ready, "the Validation Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function publishCard() {
+  const v = RUN && RUN.validate, pk = v && v.package;
+  const openMap = RUN && RUN.configure ? RUN.configure.mappings.filter(m => m.status !== "mapped" && !RUN.mappings_confirmed.includes(m.service)).length : 0;
+  const checks = [[RUN && RUN.interpret && decided(), "Every rule approved or rejected by a person"], [!!pk && !RUN.injected && pk.tests.failed === 0, "Validation matched every scenario, on a clean configuration"],
+                  [!!pk && pk.ready, "No blocking exceptions"], [!!RUN && !!RUN.configure && openMap === 0, "Every flagged code mapping confirmed by a coding reviewer"]];
+  const ok = checks.every(c => c[0]);
+  if (RUN && RUN.stage === "approved") {
+    return `<section class="agent done"><header><span class="num-badge">✓</span><div><h2>Published</h2><div class="small muted">The rule set is live for the Claims tile.</div></div></header><div class="body">
+      <div class="kv"><div><b>v${RUN.approval.version}</b><span>published by ${esc(RUN.approval.by)}</span></div><div><b>${PUB ? PUB.rule_count : "—"}</b><span>approved rules</span></div><div><b>${pk.tests.passed}/${pk.tests.total}</b><span>validation scenarios matched</span></div></div>
+      <div class="row" style="margin-top:16px">${RUN.kind !== "amendment" ? `<button class="btn primary" id="loadamend">Load the amendment and see what changes</button>` : ""}<button class="btn" id="pushrun">Send the configuration to the benefit engine</button><a class="btn" href="/console/?m=${MARKET}">Back to the console</a></div></div></section>`;
+  }
+  return `<section class="agent ${ok ? "cur" : "locked"}"><header><span class="num-badge">5</span><div><h2>Approve and publish</h2><div class="small muted">A person publishes the rule set. Claims read only published rules.</div></div>
+    <span class="right"><button class="btn primary" id="approve" ${canEdit() && ok ? "" : "disabled"}>Approve and publish rule set</button></span></header><div class="body">
+    <ul class="checks" style="list-style:none;padding:0;margin:0">${checks.map(([c, t]) => `<li style="display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line)">${c ? `<span class="chip ok">${ico("check")} Done</span>` : `<span class="chip mute">Waiting</span>`}<span>${esc(t)}</span></li>`).join("")}</ul></div></section>`;
+}
+
+const CFG = {
+  uc: "benefits", title: "Benefit Plan Interpretation & Coding", sub: "4-step agent pipeline · human gates", onMarket: switchMarket,
+  get crumbs() { return [{ t: "Console", href: "/console/?m=" + MARKET }, { t: "Benefit Plan Interpretation & Coding" }]; },
+  groups: () => { const d = [!!(RUN && RUN.interpret && decided()), !!(RUN && RUN.configure), !!(RUN && RUN.validate), !!(RUN && RUN.stage === 'approved')]; return [
+    { label: "Overview", items: [{ id: "overview", name: "Module overview", sub: "Stats and capabilities", icon: "grid" }] },
+    { label: "Agents", items: [
+      { id: "agent-1", num: 1, name: "Interpretation Agent", sub: "Document to cited rules", done: d[0] },
+      { id: "agent-2", num: 2, name: "Configuration & Coding", sub: "Payload and code mapping", done: d[1] },
+      { id: "agent-3", num: 3, name: "Validation Agent", sub: "Scenario tests", done: d[2] },
+      { id: "agent-4", num: 4, name: "Approve and publish", sub: "Versioned rule set", done: d[3] }] },
+    { label: "Reference tables", items: [
+      { id: "ref-crosswalk", name: "Service-to-code crosswalk", sub: "Effective-dated mappings", icon: "table" },
+      { id: "ref-published", name: "Published rule set", sub: "What claims read", icon: "table" },
+      { id: "ref-model", name: "Benefit model preview", sub: "Published configuration", icon: "table" }] },
+    { label: "Configuration", items: [{ id: "settings", name: "Settings", sub: "System connections", icon: "gear" }] }]; },
+  status: () => `${chip(AI.live ? `AI: Gemini (${AI.model})` : "AI: rule-based fallback, no Gemini key", AI.live ? "ai" : "mute")}${PUB ? chip(`Published: v${PUB.version}`, "ok") : chip("Nothing published yet", "warn")}${RUN ? chip(`Document: ${RUN.title}`, "blue") : ""}`,
+  launch: () => { const base = SAMPLES.find(s => s.kind === "base"); UI.picked = UI.picked || (base && base.id); if (modView() === "agent-1") render(); else location.hash = "#agent-1"; },
+  views: {
+    overview: () => overviewHtml({ kicker: "Payer operations console — module overview", title: "Benefit Plan Interpretation & Coding",
+      desc: "Agents turn a plan document into verified, cited rules and a system-ready configuration. AI proposes; code verifies every quote and value; a person approves; validation tests the loaded configuration before anything is published.",
+      kpis: [[PUB ? `v${PUB.version}` : "None", "Published rule set"], [K.published_rules ? `${K.verified_rules}/${K.published_rules}` : "—", "Rules verified in their source"], [K.latest_tests ? `${K.latest_tests.passed}/${K.latest_tests.total}` : "—", "Validation scenarios matched"]],
+      steps: [["Interpretation Agent", "Reads the plan document and proposes rules, each with its page, clause and exact quote. Code verifies every quote and value in the source. Ambiguities go to a reviewer."],
+      ["Configuration & Coding Agent", "Turns the approved rules into the benefit model, a system-ready payload (JSON, fields, CSV) and service-to-code mappings from the effective-dated crosswalk, flagging gaps."],
+      ["Validation Agent", "Generates boundary-case scenarios, works out the expected result from the approved rules, runs the loaded configuration through the engine and reports every difference."],
+      ["Approve and publish", "A person publishes a versioned rule set. The Claims and Denials modules read only published rules. The configuration can then be sent to the benefit engine."]] }),
+    "agent-1": () => stepper() + `<div style="height:22px"></div>` + documentCard() + interpretCard() + agentNav(null, ["agent-2", "Configuration & Coding"]),
+    "agent-2": () => ctxBar() + configureCard() + agentNav(["agent-1", "Interpretation Agent"], ["agent-3", "Validation Agent"]),
+    "agent-3": () => ctxBar() + validateCard() + agentNav(["agent-2", "Configuration & Coding"], ["agent-4", "Approve and publish"]),
+    "agent-4": () => ctxBar() + publishCard() + agentNav(["agent-3", "Validation Agent"], null) }
+};
+const ctxBar = () => RUN ? `<div class="row" style="margin-bottom:16px;gap:10px"><b>Working on</b>${chip(RUN.title, "blue")}${chip(RUN.kind === "amendment" ? "amendment" : "base document", RUN.kind === "amendment" ? "warn" : "mute")}<a class="btn sm right" href="#agent-1">Change document</a></div>` : `<div class="gate" style="margin:0 0 16px">No document is loaded. <a href="#agent-1">Load one on the Interpretation Agent page</a>.</div>`;
+function render() { Mod.render(CFG); bind(); }
+window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render(); });
+
+/* ---------- the document viewer ---------- */
+function openDoc(page, clause) {
+  PDFV.open({ title: RUN.title, pdfUrl: `/api/benefits/runs/${RUN.id}/document.pdf`, pages: RUN.doc_meta.pages, page, clause,
+    pageUrl: (n, c) => `/api/benefits/runs/${RUN.id}/page/${n}.png${c ? "?clause=" + encodeURIComponent(c) : ""}` });
+}
+
+/* ---------- behaviour ---------- */
+async function reloadRun() { RUN = await api(`/benefits/runs/${RUN.id}`); }
+function bind() {
+  $$("[data-run]").forEach(b => b.onclick = () => runAgent(b.dataset.run));
+  $$("[data-pick]").forEach(b => b.onclick = () => { UI.picked = b.dataset.pick; UI.mode = "sample"; render(); });
+  const f = $("#file"); if (f) f.onchange = () => { const file = f.files[0]; if (!file) { UI.file = null; return; } const rd = new FileReader(); rd.onload = () => { UI.file = { name: file.name, mime: file.type || "application/octet-stream", b64: String(rd.result).split(",")[1] }; UI.mode = "upload"; UI.picked = null; render(); }; rd.readAsDataURL(file); };
+  const pa = $("#paste"); if (pa) pa.oninput = () => { UI.paste = pa.value; if (pa.value.trim()) { UI.mode = "paste"; UI.picked = null; UI.file = null; } };
+  const ld = $("#loaddoc"); if (ld) ld.onclick = () => guard(async () => {
+    const body = UI.picked ? { market: MARKET, sample_id: UI.picked } : UI.file ? { market: MARKET, filename: UI.file.name, mime: UI.file.mime, file_b64: UI.file.b64 } : UI.paste.trim() ? { market: MARKET, text: UI.paste } : null;
+    if (!body) throw new Error("Choose a sample document, upload a file or paste some text.");
+    RUN = await post("/benefits/runs", body); UI.changeDoc = false; UI.showSource = false; UI.collapse = undefined; render(); toast("Document loaded. Now run the Interpretation Agent.");
+  });
+  const cd = $("#changedoc"); if (cd) cd.onclick = () => { UI.changeDoc = true; UI.picked = null; render(); };
+  const cc = $("#cancelchange"); if (cc) cc.onclick = () => { UI.changeDoc = false; render(); };
+  const vp = $("#viewpdf"); if (vp) vp.onclick = () => openDoc(1, null);
+  $$("[data-viewrule]").forEach(b => b.onclick = () => { const r = RUN.rules.find(x => x.id === b.dataset.viewrule); if (r) openDoc(r.page, r.clause); });
+  const ts = $("#togglesrc"); if (ts) ts.onclick = () => { UI.showSource = !UI.showSource; render(); };
+  $$("[data-rulestatus]").forEach(b => b.onclick = () => guard(async () => { const [id, st] = b.dataset.rulestatus.split(":"); RUN = await post(`/benefits/runs/${RUN.id}/rules/${id}/status`, { status: st }); render(); }));
+  $$("[data-decision]").forEach(i => i.onchange = () => guard(async () => { RUN = await post(`/benefits/runs/${RUN.id}/rules/${i.dataset.decision}/decision`, { value: i.value }); render(); }));
+  $$("[data-edit]").forEach(b => b.onclick = () => { UI.editing = b.dataset.edit; render(); });
+  $$("[data-canceledit]").forEach(b => b.onclick = () => { UI.editing = null; render(); });
+  $$("[data-saveedit]").forEach(b => b.onclick = () => guard(async () => { RUN = await post(`/benefits/runs/${RUN.id}/rules/${b.dataset.saveedit}/edit`, { value: +$("#editval").value }); UI.editing = null; render(); toast("Value saved. Downstream steps must be run again."); }));
+  const tr = $("#togglerules"); if (tr) tr.onclick = () => { const cur = UI.collapse !== undefined ? UI.collapse : !!(RUN && RUN.configure); UI.collapse = !cur; render(); };
+  const aa = $("#approveall"); if (aa) aa.onclick = () => guard(async () => {
+    let n = 0;
+    for (const r of RUN.rules) if (r.status === "proposed" && !r.needs_decision && r.evidence.quote_found && (r.evidence.value_in_quote || r.edited)) { await post(`/benefits/runs/${RUN.id}/rules/${r.id}/status`, { status: "approved" }); n++; }
+    await reloadRun(); render(); toast(`${n} verified rule(s) approved. Rules that need a decision or failed verification stay open.`);
+  });
+  $$("[data-tab]").forEach(b => b.onclick = () => { UI.tab = b.dataset.tab; render(); });
+  $$("[data-confirmmap]").forEach(b => b.onclick = () => guard(async () => { RUN = await post(`/benefits/runs/${RUN.id}/mappings/${encodeURIComponent(b.dataset.confirmmap)}/confirm`); render(); }));
+  const inj = $("#inject"); if (inj) inj.onchange = () => { UI.inject = inj.checked; };
+  const tt = $("#toggletests"); if (tt) tt.onclick = () => { UI.showAllTests = !UI.showAllTests; render(); };
+  const ap = $("#approve"); if (ap) ap.onclick = () => guard(async () => { RUN = await post(`/benefits/runs/${RUN.id}/approve`); PUB = await api(`/benefits/published?market=${MARKET}`); render(); toast(`Rule set v${RUN.approval.version} published.`); });
+  const pr = $("#pushrun"); if (pr) pr.onclick = () => guard(() => pushTo("benefits", RUN.id, "Configuration sent"));
+  const la = $("#loadamend"); if (la) la.onclick = () => guard(async () => {
+    const am = SAMPLES.find(s => s.kind === "amendment"); if (!am) throw new Error("No amendment sample for this market.");
+    RUN = await post("/benefits/runs", { market: MARKET, sample_id: am.id }); UI.changeDoc = false; if (modView() === "agent-1") render(); else location.hash = "#agent-1"; window.scrollTo(0, 0); toast("Amendment loaded. Run the Interpretation Agent to see what changed.");
+  });
+}
+async function runAgent(key) {
+  UI.running = key; render();
+  const started = Date.now();
+  try {
+    RUN = await post(`/benefits/runs/${RUN.id}/${key}`, key === "validate" ? { inject_defect: UI.inject } : {});
+    const wait = 800 - (Date.now() - started);  // keep the spinner visible long enough to read when the agent answers instantly
+    if (wait > 0) await sleep(wait);
+    UI.reveal = key;
+  }
+  catch (e) { toast(e.message, true); }
+  finally { UI.running = null; render(); if (UI.reveal) animateReveal(UI.reveal); }
+}
+async function load() {
+  [META, SAMPLES, PUB, AI, K] = await Promise.all([api("/meta"), api(`/benefits/samples?market=${MARKET}`), api(`/benefits/published?market=${MARKET}`), api("/ai/status"), api(`/kpis?market=${MARKET}`)]);
+  const runs = await api(`/benefits/runs?market=${MARKET}`);
+  RUN = runs.length ? await api(`/benefits/runs/${runs[0].id}`) : null;
+  render();
+}
+function switchMarket() { RUN = null; UI.picked = null; UI.changeDoc = false; UI.collapse = undefined; load(); }
+(async () => { try { await boot(); await load(); } catch (e) { if (e.message !== "wrong role" && e.message !== "Please sign in.") document.body.insertAdjacentHTML("afterbegin", `<div class="wrap" style="padding-block:30px">Could not load: ${esc(e.message)}</div>`); } })();
+</script>
+</body>
+</html>

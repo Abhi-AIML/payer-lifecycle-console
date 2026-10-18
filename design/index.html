@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Concept: an operations map. A deep-navy frame, a saturated blue heat-map as the hero, mono type for every citation. */
+:root{
+  --font-display:"Manrope","Segoe UI",system-ui,sans-serif; --font-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif; --font-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --navy:#081B3F; --navy-2:#0F2C63; --blue:#1D5BF0; --blue-deep:#1347C7; --steel:#A9C0E8; --steel-ink:#0B1B3A;
+  --canvas:#EAF0FA; --surface:#FFFFFF; --ink:#0B1B3A; --muted:#51627F; --line:#D5DEEE; --soft:#F3F6FC;
+  --live:#17B67F; --live-bg:#DDF6EC; --live-ink:#0B6B4A; --amber:#F0A020; --amber-bg:#FFF1D6; --amber-ink:#7A4B00; --rose:#E24B52; --rose-bg:#FDE8E9; --rose-ink:#9C1F26;
+  --ai:#6A4CE0; --ai-bg:#EEE9FD; --shadow:0 1px 2px rgba(8,27,63,.08),0 8px 24px rgba(8,27,63,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#0A1730; --surface:#102242; --ink:#EAF0FB; --muted:#9FB2D1; --line:#223A63; --soft:#0D1D3A;
+  --live-bg:#0F3A2C; --live-ink:#6FE0B6; --amber-bg:#3B2D0F; --amber-ink:#FFCB6B; --rose-bg:#40181B; --rose-ink:#FF9A9F; --ai-bg:#2A2252; --shadow:none;color-scheme:dark}}
+:root[data-theme="dark"]{--canvas:#0A1730; --surface:#102242; --ink:#EAF0FB; --muted:#9FB2D1; --line:#223A63; --soft:#0D1D3A;
+  --live-bg:#0F3A2C; --live-ink:#6FE0B6; --amber-bg:#3B2D0F; --amber-ink:#FFCB6B; --rose-bg:#40181B; --rose-ink:#FF9A9F; --ai-bg:#2A2252; --shadow:none;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--ink);font:400 15px/1.55 var(--font-body);-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--font-display);margin:0;letter-spacing:-.015em;text-wrap:balance}
+h1{font-size:40px;line-height:1.08;font-weight:800} h2{font-size:22px;line-height:1.2;font-weight:700} h3{font-size:16px;font-weight:700}
+a{color:inherit} button{font:inherit;cursor:pointer;color:inherit}
+.mono{font-family:var(--font-mono);font-weight:500;font-size:12.5px;letter-spacing:.01em}
+.muted{color:var(--muted)} .small{font-size:13px} .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center} .right{margin-left:auto}
+.kicker{font:500 12px var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+:focus-visible{outline:3px solid #7FA6FF;outline-offset:2px;border-radius:6px}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:24px}
+.proto{background:#10224A;color:#C9D6F2;font-size:12.5px;padding:7px 24px;display:flex;gap:10px;flex-wrap:wrap}.proto b{color:#fff}
+
+/* buttons and chips */
+.btn{display:inline-flex;gap:8px;align-items:center;justify-content:center;padding:11px 20px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-weight:600;text-decoration:none}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.light{background:#fff;color:var(--navy);border-color:#fff}.btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.45)}
+.btn.sm{padding:6px 12px;font-size:13px}.btn:disabled{opacity:.4;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--live-bg);color:var(--live-ink)}.chip.warn{background:var(--amber-bg);color:var(--amber-ink)}.chip.bad{background:var(--rose-bg);color:var(--rose-ink)}
+.chip.ai{background:var(--ai-bg);color:var(--ai)}.chip.mute{background:var(--soft);color:var(--muted);border:1px solid var(--line)}.chip.blue{background:#E1EBFF;color:var(--blue-deep)}
+.cite{display:inline-flex;font:500 11.5px var(--font-mono);background:var(--soft);border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:2px 7px;white-space:nowrap}
+svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* top bar and frame */
+.bar{background:var(--navy);color:#fff}
+.bar .wrap{display:flex;gap:18px;align-items:center;padding-block:14px;flex-wrap:wrap}
+.logo{display:flex;gap:10px;align-items:center;font:800 17px var(--font-display);text-decoration:none;color:#fff;letter-spacing:-.01em}
+.logo svg{width:30px;height:30px}
+.crumbs{font-size:13px;color:#B5C6E6}.crumbs a{color:#fff;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.3)}
+.seg{display:inline-flex;background:rgba(255,255,255,.1);border-radius:10px;padding:3px}
+.seg button{background:transparent;color:#C9D6F2;border:0;padding:7px 18px;border-radius:8px;font-weight:700;font-size:13px}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--navy)}
+.user{display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.25}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:grid;place-items:center;font-weight:800}
+.band{background:radial-gradient(1200px 400px at 85% -20%,#1E4FB8 0,transparent 60%),var(--navy);color:#fff;padding-block:30px 78px}
+.band h1{color:#fff}.band p{color:#C3D2F0;margin:8px 0 0;max-width:62ch}
+.lift{margin-top:-52px}
+
+/* landing */
+.hero{background:radial-gradient(900px 520px at 80% 10%,#244FB3 0,transparent 62%),linear-gradient(180deg,var(--navy),#0A2250);color:#fff;padding-bottom:70px}
+.hero .wrap.two-col{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center;padding-block:40px 20px}
+.hero h1{font-size:58px;line-height:1.02;letter-spacing:-.03em}
+.hero .lead{font-size:18px;color:#C3D2F0;max-width:46ch;margin:20px 0 28px}
+.nav{display:flex;align-items:center;gap:24px;padding-block:18px}.nav a.l{color:#C3D2F0;text-decoration:none;font-size:14px;font-weight:500}
+.demo{background:var(--surface);color:var(--ink);border-radius:16px;box-shadow:0 30px 70px rgba(0,0,0,.35);padding:22px;display:grid;gap:12px}
+.demo .stepbox{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--soft)}
+.demo .lab{font:500 11px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.demo mark{background:#FFE08A;color:#3A2A00;padding:1px 3px;border-radius:3px;animation:glow 3.2s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(240,160,32,0)}50%{box-shadow:0 0 0 5px rgba(240,160,32,.28)}}
+@media (prefers-reduced-motion:reduce){.demo mark{animation:none}}
+.arrow{display:grid;place-items:center;color:var(--blue)}
+.sec{padding-block:56px}.sec h2{font-size:30px;margin-bottom:8px}
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.how>div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px}
+.how .ic{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;color:#fff;margin-bottom:14px}
+.roles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.rolecard{display:flex;gap:14px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;width:100%;align-items:center}
+.rolecard:hover{border-color:var(--blue);box-shadow:var(--shadow)}
+.signin{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+label{display:block;font-size:13px;color:var(--muted);font-weight:500}
+input,select{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:100%;margin-top:5px}
+.form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:14px;box-shadow:var(--shadow)}
+
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpi{position:relative;background:var(--surface);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.kpi .kn{font:800 34px/1 var(--font-display);letter-spacing:-.02em}.kpi .lab{font-size:13px;color:var(--muted);margin-top:6px}
+.kpi .tag{font:500 10.5px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--amber-ink);background:var(--amber-bg);padding:2px 6px;border-radius:4px;position:absolute;right:12px;top:12px}
+
+/* the heat-map */
+.maphead{display:flex;align-items:end;gap:20px;flex-wrap:wrap;margin:30px 0 14px}
+.legend2{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);align-items:center}
+.legend2 i.sw{display:inline-block;width:18px;height:18px;border-radius:5px;vertical-align:-4px;margin-right:7px}
+.sw.hi{background:linear-gradient(160deg,#2A6BFF,#1347C7)}.sw.ring{background:linear-gradient(160deg,#2A6BFF,#1347C7);outline:2px solid var(--live);outline-offset:1px}.sw.dash{background:linear-gradient(160deg,#2A6BFF,#1347C7);filter:saturate(.55);border:1.5px dashed rgba(255,255,255,.7)}
+.heat{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:auto repeat(2,minmax(150px,auto));gap:12px}
+.colhead{background:var(--navy);color:#fff;border-radius:8px;padding:11px 12px;font:700 11.5px var(--font-display);letter-spacing:.1em;text-transform:uppercase;text-align:center}
+.tile{position:relative;display:flex;flex-direction:column;text-align:left;border:0;border-radius:10px;padding:16px;color:#fff;min-height:150px;
+  background:linear-gradient(160deg,#2A6BFF 0%,#1347C7 100%);box-shadow:0 6px 16px rgba(19,71,199,.28);transition:transform .15s,box-shadow .15s}
+.tile.med{background:linear-gradient(160deg,#BFD1F2 0%,#94AEE0 100%);color:var(--steel-ink);box-shadow:0 6px 16px rgba(80,110,170,.2)}
+.tile:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(19,71,199,.4)}
+.tile .ti{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tile .ti svg{width:26px;height:26px;opacity:.95}
+.tile b{font:700 16px/1.22 var(--font-display);letter-spacing:-.01em;margin-bottom:6px}
+.tile .d{font-size:13px;line-height:1.4;opacity:.9}
+.tile .foot{margin-top:auto;padding-top:14px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.tile .feas{font:500 11px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;opacity:.85}
+.tile .state{font:700 11px var(--font-display);letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:99px;background:rgba(255,255,255,.18)}
+.tile.built{outline:3px solid var(--live);outline-offset:2px}
+.tile.built .state{background:var(--live);color:#04281C}
+.tile.planned{filter:saturate(.55) brightness(1.04);box-shadow:none}
+.tile.planned::after{content:"";position:absolute;inset:6px;border:1.5px dashed rgba(255,255,255,.55);border-radius:6px;pointer-events:none}
+.livepip{position:absolute;right:12px;top:12px;background:#fff;color:#0B6B4A;font:800 10px var(--font-display);letter-spacing:.1em;padding:2px 7px;border-radius:99px}
+@media(max-width:1100px){.heat{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none}.heat>*{grid-column:auto!important;grid-row:auto!important}.kpis{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.heat{grid-template-columns:1fr}.kpis{grid-template-columns:1fr}.hero .wrap.two-col{grid-template-columns:1fr;gap:34px}.hero h1{font-size:40px}.how,.roles,.signin{grid-template-columns:1fr}h1{font-size:32px}}
+
+/* process timeline */
+.rail{display:grid;grid-template-columns:repeat(7,1fr);gap:0;position:relative}
+.rail::before{content:"";position:absolute;left:7%;right:7%;top:19px;height:3px;background:var(--line)}
+.step{position:relative;background:none;border:0;text-align:center;padding:0 6px}
+.step .n{width:40px;height:40px;border-radius:50%;margin:0 auto 10px;display:grid;place-items:center;font:800 15px var(--font-display);background:var(--surface);border:3px solid var(--line);color:var(--muted);position:relative}
+.step.done .n{background:var(--live);border-color:var(--live);color:#04281C}.step.cur .n{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 0 0 6px rgba(29,91,240,.18)}
+.step b{display:block;font:700 13.5px var(--font-display)}.step span.d{font-size:12px;color:var(--muted);display:block;line-height:1.35}
+@media(max-width:900px){.rail{grid-template-columns:repeat(2,1fr);row-gap:18px}.rail::before{display:none}}
+.panel2{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow);min-width:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:900px){.two,.three{grid-template-columns:1fr}}
+.li{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}.li:first-of-type{border-top:0}
+.li .mk{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none}
+.pain .mk{background:var(--rose-bg);color:var(--rose-ink)}.fix .mk{background:var(--live-bg);color:var(--live-ink)}
+.bignum{font:800 30px/1 var(--font-display);letter-spacing:-.02em}
+.tabs{display:flex;gap:6px;margin:0 0 22px;overflow-x:auto}
+.lift>.tabs:first-child{background:var(--surface);border-radius:12px;padding:0 10px;box-shadow:var(--shadow);margin-bottom:20px}
+.tabs button{background:transparent;border:0;border-bottom:3px solid transparent;padding:10px 14px;color:var(--muted);font-weight:600;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--blue);border-color:var(--blue)}
+
+/* review */
+.split{display:grid;grid-template-columns:1fr 1.2fr;gap:20px;align-items:start}
+@media(max-width:1000px){.split{grid-template-columns:1fr}}
+.doc{position:sticky;top:16px;max-height:calc(100vh - 40px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 24px 20px;box-shadow:var(--shadow)}
+.doc .pg{font:500 11px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 0 6px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.doc p{margin:2px -10px;padding:7px 10px;border-radius:8px;line-height:1.6}.doc p b{font-family:var(--font-mono);font-weight:500;color:var(--blue);margin-right:6px}
+.doc p.hl{background:#FFF1C9;box-shadow:inset 4px 0 0 var(--amber);color:#2B2000}
+:root[data-theme="dark"] .doc p.hl{color:#FFE9A8;background:#3B2D0F}
+.rule{display:grid;grid-template-columns:1fr auto;gap:6px 16px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface);margin-bottom:10px}
+.rule.sel{border-color:var(--blue);box-shadow:0 0 0 3px rgba(29,91,240,.15)}
+.rule .nm{font-weight:600}.rule .val{font:800 22px var(--font-display);letter-spacing:-.01em}
+.rule .q{grid-column:1/-1;font-size:13px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+.rule .acts{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.notice{grid-column:1/-1;background:var(--amber-bg);color:var(--amber-ink);border-radius:10px;padding:12px 14px;font-size:13.5px}
+.checks{list-style:none;margin:0;padding:0}.checks li{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line);align-items:flex-start}.checks li:first-child{border-top:0}
+
+/* tester, diff */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font:500 11px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:8px;border-bottom:2px solid var(--ink)}
+td{padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.total td{font:800 17px var(--font-display);border-top:2px solid var(--ink);border-bottom:0}
+.diff .old{color:var(--rose-ink);text-decoration:line-through}.diff .new{color:var(--live-ink);font-weight:700}
+.before-after{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.before-after .bignum.dim{color:var(--muted);text-decoration:line-through}
+.scroll{overflow-x:auto}
+.panel{position:fixed;right:0;top:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--line);padding:calc(26px + env(safe-area-inset-top,0px)) 26px 26px;box-shadow:-12px 0 40px rgba(8,27,63,.3);overflow:auto;z-index:10}
+#toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--navy);color:#fff;padding:12px 18px;border-radius:10px;display:none;z-index:20;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+</style>
+</head>
+<body>
+<div class="proto"><b>Design prototype.</b> Static screens with sample data and no backend. Anything marked "sample" is a placeholder, not a result.</div>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const money = n => (M().cur + Number(n).toLocaleString(M().locale, { maximumFractionDigits: 0 }));
+
+/* ---------- icons ---------- */
+const P = {
+  doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/>', shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>', users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 5a3 3 0 010 6M18 15c2 .6 3 2 3 5"/>',
+  receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>', inbox: '<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 3h6l1-3h5"/>',
+  scale: '<path d="M12 4v16M6 20h12M5 7h14"/><path d="M5 7l-3 7a3 3 0 006 0zM19 7l-3 7a3 3 0 006 0z"/>', link: '<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>',
+  check: '<path d="M5 12l5 5 9-10"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  spark: '<path d="M12 3l2.2 6.2L21 12l-6.8 2.8L12 21l-2.2-6.2L3 12l6.8-2.8z"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'
+};
+const ico = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const MARK = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#1D5BF0"/><g stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"><circle cx="9" cy="10" r="2.6" fill="#fff"/><circle cx="23" cy="10" r="2.6" fill="#fff"/><circle cx="16" cy="22" r="2.6" fill="#fff"/><path d="M11 11l3.5 8M21 11l-3.5 8M11.5 10h9"/></g></svg>`;
+
+/* ---------- sample data, one block per market ---------- */
+const MARKETS = {
+  us: {
+    label: "United States", cur: "$", locale: "en-US", docTitle: "Gold PPO Summary of Benefits and Coverage", version: "v1, effective 01 Jan 2026",
+    required: ["Annual deductible", "Coinsurance", "Out-of-pocket maximum"], flow: "Plan document → deductible, coinsurance, copay and authorization rules",
+    doc: [
+      { page: 1, clauses: [["1.1", "The annual deductible is $1,500 per member and applies to inpatient and outpatient services."], ["1.2", "Preventive visits are not subject to the deductible."]] },
+      { page: 2, clauses: [["2.1", "After the deductible, the plan pays 80% and the member pays 20% coinsurance for in-network services."], ["2.2", "The out-of-pocket maximum is $6,000 per member per year."]] },
+      { page: 3, clauses: [["3.1", "Primary care or specialist office visit: $30 copay per visit. The deductible does not apply."], ["3.2", "Physical therapy visit: $40 copay per visit. The deductible does not apply."]] },
+      { page: 4, clauses: [["4.1", "Total knee replacement requires prior authorization. Without it the service is denied."], ["4.2", "Advanced imaging such as MRI requires prior authorization. Without it the service is denied."]] },
+      { page: 5, clauses: [["5.1", "Cosmetic procedures are not covered."], ["5.2", "Experimental treatments are not covered."]] }],
+    rules: [
+      { id: "R1", name: "Annual deductible", value: "$1,500", clause: "1.1", page: 1 }, { id: "R2", name: "Coinsurance (member pays)", value: "20%", clause: "2.1", page: 2 },
+      { id: "R3", name: "Out-of-pocket maximum", value: "$6,000", clause: "2.2", page: 2 }, { id: "R4", name: "Office visit copay", value: "$30", clause: "3.1", page: 3 },
+      { id: "R5", name: "Physical therapy copay", value: "$40", clause: "3.2", page: 3 }, { id: "R6", name: "Prior authorization required", value: "Knee replacement, MRI", clause: "4.1", page: 4 },
+      { id: "R7", name: "Exclusion", value: "Cosmetic, experimental", clause: "5.1", page: 5 }],
+    flag: null,
+    changes: [["Annual deductible", "$1,500", "$1,000", "Clause 1.1"], ["Coinsurance (member pays)", "20%", "10%", "Clause 2.1"]],
+    impact: { claims: "sample: 3 of 4 open claims touched", before: "$4,100", after: "$1,950", line: "Knee replacement claim, member share" },
+    pain: ["Analysts read the Summary of Benefits and key every rule into the claims platform by hand.", "Handoffs between configuration, QA and compliance teams cause version-control mistakes.", "A mistyped rule shows up months later as a wrong payment or an audit finding."],
+    fix: ["AI reads the document into rules and cites the page, clause and quote for each.", "Rules check required items, ranges and conflicts before anyone approves.", "Every approved rule is versioned, so any payment traces back to its clause."]
+  },
+  in: {
+    label: "India", cur: "Rs. ", locale: "en-IN", docTitle: "Suraksha Health Gold policy wording", version: "v1, policy year 2026",
+    required: ["Sum insured", "Room-rent cap"], flow: "Policy wording → room cap, proportionate deduction, sub-limits, waiting periods and co-pay",
+    doc: [
+      { page: 1, clauses: [["1.1", "The sum insured is Rs. 5,00,000 per policy year."]] },
+      { page: 2, clauses: [["2.1", "Room rent is covered up to Rs. 5,000 per day."], ["2.2", "If the room chosen costs more than the limit, all room-linked charges (surgeon, anaesthesia, nursing and operation theatre fees) are reduced in the same proportion."]] },
+      { page: 3, clauses: [["3.1", "Total knee replacement is covered up to Rs. 2,50,000 per admission."], ["3.2", "Cataract surgery is covered up to Rs. 50,000 per eye."]] },
+      { page: 4, clauses: [["4.1", "An initial waiting period of 30 days applies to all illnesses, except accidents."], ["4.2", "Joint replacement is covered only after 2 years of continuous cover."]] },
+      { page: 5, clauses: [["5.1", "A co-payment of 10% applies to every admissible claim."], ["5.2", "Non-medical items such as administrative charges, toiletries and consumables are not payable."], ["5.3", "Cosmetic procedures are not covered."]] }],
+    rules: [
+      { id: "R1", name: "Sum insured", value: "Rs. 5,00,000", clause: "1.1", page: 1 }, { id: "R2", name: "Room-rent cap per day", value: "Rs. 5,000", clause: "2.1", page: 2 },
+      { id: "R3", name: "Proportionate deduction scope", value: "Room-linked charges", clause: "2.2", page: 2, needsDecision: true },
+      { id: "R4", name: "Sub-limit: knee replacement", value: "Rs. 2,50,000", clause: "3.1", page: 3 }, { id: "R5", name: "Sub-limit: cataract", value: "Rs. 50,000 per eye", clause: "3.2", page: 3 },
+      { id: "R6", name: "Waiting period: initial", value: "30 days", clause: "4.1", page: 4 }, { id: "R7", name: "Waiting period: joint replacement", value: "2 years", clause: "4.2", page: 4 },
+      { id: "R8", name: "Co-payment", value: "10%", clause: "5.1", page: 5 }, { id: "R9", name: "Non-payable items", value: "Admin, toiletries, consumables", clause: "5.2", page: 5 }],
+    flag: "The wording lists the room-linked charges and says implants, medicines, consumables and diagnostic tests are not reduced. It is silent on ICU charges, and the IRDAI Master Circular on Health Insurance Business (29 May 2024) has no clause on it, so the policy wording governs. Choose how to treat ICU.",
+    changes: [["Room-rent cap per day", "Rs. 5,000", "Rs. 7,000", "Clause 2.1"], ["Co-payment", "10%", "5%", "Clause 5.1"]],
+    impact: { claims: "sample: 2 of 4 open claims touched", before: "Rs. 1,61,000", after: "Rs. 1,92,000", line: "Knee replacement claim, plan pays" },
+    pain: ["Policy wording is read and applied by hand, and different people read the same clause differently.", "Deductions must cite a specific clause, but the clause is hard to trace after the fact.", "Rules like proportionate deduction are disputed, and nobody flags where wording and regulation may differ."],
+    fix: ["AI reads the wording into rules and cites the clause and quote for each.", "Rules flag where wording and regulation may disagree and ask a person to choose the scope.", "Every deduction later traces to an approved clause in a versioned rule set."]
+  }
+};
+let market = new URLSearchParams(location.search).get("m") === "in" ? "in" : "us";
+const M = () => MARKETS[market];
+
+const COLUMNS = ["Benefit coding", "Provider", "Member / Enrollment", "Claims", "Billing", "Customer service"];
+const TILES = [
+  { id: "benefits", name: "Benefit Plan Interpretation & Coding", col: 0, row: 0, feas: "high", built: true, live: true, ic: "doc", what: "Turns plan documents into approved, cited rules." },
+  { id: "pa", name: "Prior Auth & Medical Necessity Flagging", col: 0, row: 1, feas: "high", built: false, ic: "shield", what: "Checks requests against benefit rules and criteria, routes them, runs the SLA clock." },
+  { id: "pasub", name: "Manual Prior Auth Submission Support", col: 1, row: 0, feas: "high", built: false, ic: "inbox", what: "AI-assisted intake and routing of authorization requests." },
+  { id: "onboard", name: "Provider Onboarding & Contract Management", col: 1, row: 1, feas: "high", built: false, ic: "layers", what: "Captures contract terms from documents and loads them." },
+  { id: "cob", name: "COB Primary Determination", col: 2, row: 0, span: true, feas: "high", built: false, ic: "scale", what: "Decides which coverage pays first when a member has more than one." },
+  { id: "claims", name: "Claims Adjustments & Reprocessing", col: 3, row: 0, feas: "high", built: true, live: true, ic: "receipt", what: "Adjudicates line by line with a clause for every reduction, and reprocesses on change." },
+  { id: "denials", name: "Denial Mgmt, Redressal & Pre-emptive Edits", col: 3, row: 1, feas: "high", built: true, ic: "x", what: "Classifies reductions, finds the root cause, drafts the appeal." },
+  { id: "invoice", name: "Manual Invoice Generation & Premium Reconciliation", col: 4, row: 0, feas: "high", built: false, live: true, ic: "receipt", what: "Generates invoices and reconciles premiums after retro enrolment and corrections." },
+  { id: "payexc", name: "Payment Exception Triage & Routing", col: 4, row: 1, feas: "high", built: false, ic: "inbox", what: "Classifies emails and faxes about payment problems and routes them with SLAs." },
+  { id: "appeals", name: "Appeals / Grievance Intake Processing", col: 5, row: 0, span: true, feas: "high", built: false, ic: "users", what: "Classifies incoming disputes, routes them and tracks response clocks." }
+];
+const STEPS = [["Upload", "Add the document"], ["Extract", "AI reads the rules"], ["Validate", "Rules check them"], ["Review", "A person approves"], ["Publish", "Versioned rule set"], ["Test", "Try a sample claim"], ["Amend", "Diff and reprocess"]];
+
+/* ---------- state ---------- */
+const S = { approved: {}, scope: null, published: false, sel: "R1", panel: null, test: {}, route: "", hashRoute: undefined };
+function resetApproval() { S.approved = {}; S.scope = null; S.published = false; S.sel = "R1"; }
+const toast = msg => { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = "none"), 3200); };
+const go = r => { S.hashRoute = r.replace(/^\//, ""); try { location.hash = r; } catch (e) { /* sandboxed page */ } render(); };
+
+/* ---------- shared chrome ---------- */
+function topbar(crumbs = []) {
+  return `<header class="bar"><div class="wrap"><a class="logo" href="#/console">${MARK} Payer Lifecycle Console</a>
+  <nav class="crumbs" aria-label="Breadcrumb">${crumbs.map(c => c.href ? `<a href="${c.href}">${esc(c.t)}</a>` : esc(c.t)).join("  /  ")}</nav>
+  <div class="right row"><div class="seg" role="group" aria-label="Market">${["us", "in"].map(k => `<button data-market="${k}" aria-pressed="${market === k}">${k === "us" ? "US" : "India"}</button>`).join("")}</div>
+  <div class="user"><span class="avatar">M</span><span>Meera<br><span style="color:#B5C6E6">Benefits analyst</span></span></div></div></div></header>`;
+}
+const stepper = cur => `<div class="rail" role="list">${STEPS.map(([n, d], i) => {
+  const done = i < cur || (i === 4 && S.published);
+  return `<button class="step ${done ? "done" : ""} ${i === cur ? "cur" : ""}" role="listitem" data-step="${i}"><span class="n">${done ? "✓" : i + 1}</span><b>${n}</b><span class="d">${d}</span></button>`;
+}).join("")}</div>`;
+const tileTabs = cur => `<div class="tabs" role="tablist">${[["", "Overview"], ["review", "Review rules"], ["tester", "Rule tester"], ["changes", "Amendments"]].map(([k, l]) =>
+  `<button role="tab" aria-selected="${cur === k}" data-tab="${k}">${l}</button>`).join("")}</div>`;
+function tileBand(title, sub, extra = "") {
+  return `<section class="band"><div class="wrap"><div class="kicker" style="color:#8FB0F5;margin-bottom:10px">Benefit coding · ${esc(M().label)}</div><div class="row"><div><h1>${title}</h1><p>${sub}</p></div>${extra}</div></div></section>`;
+}
+
+/* ---------- 1. landing ---------- */
+function landing() {
+  return `<section class="hero"><div class="wrap" style="padding-block:0"><nav class="nav"><a class="logo" href="#/">${MARK} Payer Lifecycle Console</a><span class="right"></span>
+    <a class="l" href="#/how">How it works</a><a class="l" href="#/signin">Roles</a><button class="btn light sm" data-go-console>Sign in</button></nav></div>
+  <div class="wrap two-col"><div><div class="kicker" style="color:#8FB0F5">Payer operations · US and India</div>
+    <h1 style="margin-top:14px">Every payer decision, explained and sourced.</h1>
+    <p class="lead">From the plan document to the claim to the appeal, each step shows the clause behind it. AI reads. Rules decide. People confirm.</p>
+    <div class="row"><button class="btn light" data-go-console>Open the console ${ico("arrow")}</button><a class="btn ghost" href="#/how">See how it works</a></div></div>
+  <div class="demo" aria-label="Example: one clause traced to one payment">
+    <div class="stepbox"><div class="lab">1 · The document says</div><div><span class="cite">Page 2 · Clause 2.1</span><p style="margin:8px 0 0"><mark>Room rent is covered up to Rs. 5,000 per day.</mark></p></div></div>
+    <div class="arrow">${ico("down")}</div>
+    <div class="stepbox"><div class="lab">2 · AI extracts, a person approves</div><div class="row"><b style="font:800 19px var(--font-display)">Room-rent cap · Rs. 5,000 / day</b><span class="chip ok">${ico("check")} Approved</span></div></div>
+    <div class="arrow">${ico("down")}</div>
+    <div class="stepbox"><div class="lab">3 · The claim line is decided</div><div class="row"><span>Deluxe room billed Rs. 9,000 / day</span><b class="right" style="font:800 19px var(--font-display)">Paid Rs. 5,000</b></div><div class="small muted" style="margin-top:6px">Reduced by Rs. 4,000 per day. The reason cites <span class="cite">Clause 2.1</span></div></div>
+  </div></div></section>
+
+  <section class="sec"><div class="wrap"><div><h2>One console for the payer lifecycle</h2><p class="muted" style="margin:6px 0 20px">Ten processes from the benefit plan to the appeal. Three are built first.</p></div>
+    <div class="heat" aria-hidden="true">${COLUMNS.map(c => `<div class="colhead">${c}</div>`).join("")}${TILES.map(t => tileHtml(t, true)).join("")}</div></div></section>
+
+  <section class="sec" id="how" style="background:var(--soft)"><div class="wrap"><h2>How it works</h2><p class="muted" style="margin:0 0 24px">Three rules keep every decision defensible.</p>
+    <div class="how"><div><div class="ic" style="background:var(--ai)">${ico("spark")}</div><h3>AI reads the documents</h3><p class="muted">Plans, policies and claims become structured data, each field tagged with its page and clause.</p></div>
+    <div><div class="ic" style="background:var(--blue)">${ico("shield")}</div><h3>Rules make the decision</h3><p class="muted">Coverage, limits and amounts come from approved, versioned rules. The same input always gives the same answer.</p></div>
+    <div><div class="ic" style="background:var(--live)">${ico("users")}</div><h3>People stay in charge</h3><p class="muted">Every rule is approved by an analyst. A denial of care is always a human decision.</p></div></div></div></section>
+
+  <section class="sec" id="signin"><div class="wrap signin"><div><h2>Sign in</h2><p class="muted">Pick a role to see the console as that person. Each role sees only what it needs.</p>
+    <div class="roles" style="grid-template-columns:1fr;margin-top:18px">${[["M", "Benefits analyst", "Configures plans and approves rules", "meera"], ["A", "Claims analyst", "Adjudicates claims and manages denials", "arjun"], ["K", "Operations manager", "Oversees all workflows, read-only", "kavita"]]
+      .map(([i, r, d, u]) => `<button class="rolecard" data-role="${u}"><span class="avatar" style="background:var(--navy);color:#fff">${i}</span><span><b>${r}</b><br><span class="small muted">${d}</span></span><span class="cite right">${u}</span></button>`).join("")}</div></div>
+    <form class="form" id="lf"><h3>Account</h3><label>Username<input id="u" value="meera" autocomplete="username"></label><label>Password<input id="p" type="password" value="demo" autocomplete="current-password"></label>
+    <button class="btn primary" type="submit">Sign in</button><div class="small muted">${ico("lock")} Demo accounts only. A real deployment never publishes credentials.</div></form></div></section>
+  <footer class="sec" style="padding-block:24px;border-top:1px solid var(--line)"><div class="wrap small muted">Prototype with synthetic data. Regulatory details need verification before any pitch.</div></footer>`;
+}
+
+/* ---------- 2. console heat-map ---------- */
+function tileHtml(t, preview = false) {
+  const cls = [t.feas === "med" ? "med" : "", t.built ? "built" : "planned"].filter(Boolean).join(" ");
+  const style = `grid-column:${t.col + 1};grid-row:${t.span ? "2 / span 2" : t.row + 2}`;
+  const inner = `<div class="ti">${ico(t.ic)}${t.live ? `<span class="livepip badge-live">LIVE</span>` : ""}</div><b>${esc(t.name)}</b><span class="d">${esc(t.what)}</span>
+    <span class="foot"><span class="feas" title="${t.feas === "high" ? "High" : "Medium"} automation feasibility">${t.feas === "high" ? "High" : "Medium"}</span><span class="state">${t.built ? "Built" : "Planned"}</span></span>`;
+  return preview ? `<div class="tile ${cls}" style="${style}">${inner}</div>`
+    : `<button class="tile ${cls}" style="${style}" data-tile="${t.id}" aria-label="${esc(t.name)}, ${t.built ? "built" : "planned"}, ${t.feas} feasibility">${inner}</button>`;
+}
+function consoleView() {
+  const kpis = [["3", "claims waiting for a person"], ["4", "rule sets published"], ["100%", "rules with a cited clause"], ["2", "SLA breaches"]];
+  return `${topbar([{ t: "Console" }])}<section class="band"><div class="wrap"><div class="kicker" style="color:#8FB0F5;margin-bottom:10px">${esc(M().label)} view</div>
+    <h1>Payer operations console</h1><p>Every process from plan setup to appeal. All ten tiles are high-automation processes. Built tiles are ringed in green, planned ones are muted.</p></div></section>
+  <div class="wrap lift"><div class="kpis">${kpis.map(([n, l]) => `<div class="kpi"><span class="tag">sample</span><div class="kn">${n}</div><div class="lab">${l}</div></div>`).join("")}</div>
+  <div class="maphead"><div><h2>Automation heat-map</h2><p class="muted" style="margin:4px 0 0">Click a tile to open that process.</p></div>
+    <div class="right legend2"><span><i class="sw hi"></i>High automation feasibility</span><span><i class="sw ring"></i>Built</span><span><i class="sw dash"></i>Planned</span></div></div>
+  <div class="heat" role="list">${COLUMNS.map(c => `<div class="colhead">${c}</div>`).join("")}${TILES.map(t => tileHtml(t)).join("")}</div>
+  <p class="small muted" style="margin:18px 0 60px">Feasibility is shown by colour and by the label on each tile. Dashboard figures are placeholders here and are computed from live data in the build.</p></div>
+  ${S.panel ? scopePanel(S.panel) : ""}`;
+}
+function scopePanel(id) {
+  const t = TILES.find(x => x.id === id);
+  return `<aside class="panel" role="dialog" aria-label="${esc(t.name)}"><div class="row"><span class="chip ${t.built ? "ok" : "mute"}">${t.built ? "Built in the hackathon cut" : "Planned"}</span><button class="btn sm right" data-close>Close</button></div>
+  <h2 style="margin:16px 0 8px">${esc(t.name)}</h2><p>${esc(t.what)}</p><h3 style="margin-top:20px">Status</h3>
+  <p class="small muted">${t.built ? "This process is built. Its screens are designed after Benefit Plan Interpretation." : "Shown so the whole payer lifecycle is visible. Its scope card will list the manual pain points and the automation we would build."}</p></aside>`;
+}
+
+/* ---------- 3. tile landing ---------- */
+function tileOverview() {
+  const m = M(), approvedCount = m.rules.filter(r => S.approved[r.id]).length;
+  return `${topbar([{ t: "Console", href: "#/console" }, { t: "Benefit Plan Interpretation" }])}
+  ${tileBand("Benefit Plan Interpretation &amp; Coding", esc(m.flow), `<div class="right row"><span class="chip ok">LIVE tile</span><button class="btn light" data-go="review">${S.published ? "Open rule set" : "Start with a document"} ${ico("arrow")}</button></div>`)}
+  <div class="wrap lift"><div class="panel2"><div class="row" style="margin-bottom:18px"><h2>Where you are</h2><span class="muted small">Seven steps, in order</span></div>${stepper(S.published ? 5 : approvedCount ? 3 : 0)}</div>
+  <div style="height:20px"></div>
+  <div class="tabs" role="tablist" style="margin-bottom:12px">${[["", "Overview"], ["review", "Review rules"], ["tester", "Rule tester"], ["changes", "Amendments"]].map(([k, l]) => `<button role="tab" aria-selected="${k === ""}" data-tab="${k}">${l}</button>`).join("")}</div>
+  <div class="two"><div class="panel2"><h2>What hurts today in ${esc(m.label)}</h2><div style="margin-top:10px">${m.pain.map(p => `<div class="li pain"><span class="mk">${ico("x")}</span><span>${esc(p)}</span></div>`).join("")}</div></div>
+    <div class="panel2"><h2>How this process fixes it</h2><div style="margin-top:10px">${m.fix.map(p => `<div class="li fix"><span class="mk">${ico("check")}</span><span>${esc(p)}</span></div>`).join("")}</div></div></div>
+  <div class="three" style="margin-top:20px"><div class="panel2"><div class="kicker muted">Current document</div><p id="doctitle" style="margin:8px 0 4px"><b>${esc(m.docTitle)}</b></p><p class="small muted" style="margin:0 0 12px">${esc(m.version)}</p><span class="chip blue">${m.rules.length} rules found</span></div>
+    <div class="panel2"><div class="kicker muted">Rule set</div><div class="bignum" style="margin:8px 0 4px">${approvedCount}<span class="muted" style="font-size:18px"> of ${m.rules.length} approved</span></div><span class="chip ${S.published ? "ok" : "warn"}">${S.published ? "Claims can read it" : "Claims cannot read it yet"}</span></div>
+    <div class="panel2"><div class="kicker muted">Who sees what</div><p class="small" style="margin:8px 0 0">Benefits analyst edits and approves. Claims analyst reads published rules. Manager reads everything.</p></div></div>
+  <div class="panel2" style="margin-top:20px"><h2 style="margin-bottom:10px">Versions</h2><div class="scroll"><table><thead><tr><th>Version</th><th>Document</th><th>Status</th><th>Approved by</th></tr></thead><tbody>
+  <tr><td class="mono">v1</td><td>${esc(m.docTitle)}</td><td>${S.published ? `<span class="chip ok">Published</span>` : `<span class="chip warn">Draft</span>`}</td><td>${S.published ? "Meera" : "Pending"}</td></tr>
+  <tr><td class="mono">v2</td><td>Amendment effective 01 Nov 2026</td><td><span class="chip mute">Not loaded</span></td><td>Pending</td></tr></tbody></table></div></div><div style="height:60px"></div></div>`;
+}
+
+/* ---------- 4. review ---------- */
+function reviewView() {
+  const m = M(), sel = m.rules.find(r => r.id === S.sel) || m.rules[0];
+  const allDone = m.rules.every(r => S.approved[r.id]), needDecision = m.rules.some(r => r.needsDecision && !S.scope);
+  const quote = r => m.doc.flatMap(p => p.clauses).find(c => c[0] === r.clause)[1];
+  return `${topbar([{ t: "Console", href: "#/console" }, { t: "Benefit Plan Interpretation", href: "#/tile/benefits" }, { t: "Review rules" }])}
+  ${tileBand("Review extracted rules", "Compare each rule with the clause it came from. Nothing goes live until you approve it.", `<div class="right row"><span class="chip ai">${ico("spark")} Gemini reads the document</span><button class="btn light" id="publish" ${allDone && !needDecision ? "" : "disabled"}>${S.published ? "Published" : "Publish rule set"}</button></div>`)}
+  <div class="wrap lift"><div class="panel2">${stepper(S.published ? 4 : 3)}</div><div style="height:20px"></div>${tileTabs("review")}
+  <div class="split"><section><h2 style="margin-bottom:10px">Source document <span class="chip mute" style="vertical-align:3px">${esc(m.version)}</span></h2>
+    <div class="doc" aria-label="Source document">${m.doc.map(p => `<div class="pg">Page ${p.page}</div>${p.clauses.map(([c, t]) => `<p data-clause="${c}" class="${sel.clause === c ? "hl" : ""}"><b>${c}</b>${esc(t)}</p>`).join("")}`).join("")}</div></section>
+  <section><h2 style="margin-bottom:10px">Extracted rules</h2>
+    ${m.rules.map(r => `<div class="rule ${sel.id === r.id ? "sel" : ""}" data-rule="${r.id}" tabindex="0"><div><div class="nm">${esc(r.name)}</div><div class="row" style="gap:8px;margin-top:4px">
+      ${S.approved[r.id] ? `<span class="chip ok">${ico("check")} Approved</span>` : r.needsDecision && !S.scope ? `<span class="chip warn">Needs your decision</span>` : `<span class="chip blue">Proposed</span>`}<span class="cite">p.${r.page} · cl. ${r.clause}</span></div></div>
+      <div class="val">${esc(r.value)}</div><div class="q">“${esc(quote(r))}”</div>
+      ${r.needsDecision ? `<div class="notice"><b>Check before approving.</b> ${esc(m.flag)}<div class="row" style="margin-top:10px;gap:18px"><label style="color:inherit;display:flex;gap:8px;align-items:center"><input type="radio" name="scope" value="linked" ${S.scope === "linked" ? "checked" : ""} style="width:auto;margin:0"> Apply to room-linked charges (as worded)</label>
+        <label style="color:inherit;display:flex;gap:8px;align-items:center"><input type="radio" name="scope" value="room" ${S.scope === "room" ? "checked" : ""} style="width:auto;margin:0"> ICU charges are not reduced</label></div></div>` : ""}
+      <div class="acts"><button class="btn sm primary" data-approve="${r.id}" ${r.needsDecision && !S.scope ? "disabled" : ""}>${S.approved[r.id] ? "Undo approval" : "Approve"}</button><button class="btn sm" data-edit="${r.id}">Edit value</button></div></div>`).join("")}
+    <div class="panel2"><h3 style="margin-bottom:6px">Validation <span class="muted small">(rules, not AI)</span></h3><ul class="checks">
+      <li><span class="chip ok">Pass</span><span>Required rules present: ${m.required.map(esc).join(", ")}</span></li>
+      <li><span class="chip ok">Pass</span><span>Every value is within a sensible range</span></li>
+      <li><span class="chip ok">Pass</span><span>No two clauses give conflicting values</span></li>
+      <li>${market === "in" ? `<span class="chip ${S.scope ? "ok" : "warn"}">${S.scope ? "Resolved" : "Check"}</span><span>Wording versus regulation: proportionate deduction scope</span>` : `<span class="chip ok">Pass</span><span>Service-to-code mapping available for authorization rules</span>`}</li></ul>
+      <p class="small muted" style="margin:8px 0 0">Publishing needs every rule approved${market === "in" ? " and the scope decision made" : ""}. Claims read only published rules.</p></div>
+  </section></div><div style="height:60px"></div></div>`;
+}
+
+/* ---------- 5. rule tester ---------- */
+function testerView() {
+  const t = S.test[market] || (S.test[market] = market === "us" ? { svc: "knee", allowed: 18500, dedLeft: 500, auth: true } : { rate: 9000, days: 7, surgeon: 60000, implant: 90000 });
+  let steps = [];
+  if (market === "us") {
+    const ded = Math.min(t.dedLeft, t.allowed), after = t.allowed - ded, coins = Math.round(after * .2);
+    if (t.svc === "cosmetic") steps = [["Exclusion check", "Cosmetic procedures are not covered", "Clause 5.1, page 5", "Denied: not covered"]];
+    else if ((t.svc === "knee" || t.svc === "mri") && !t.auth) steps = [["Authorization check", "Requires prior authorization; none on file", t.svc === "knee" ? "Clause 4.1, page 4" : "Clause 4.2, page 4", "Denied: no authorization"]];
+    else if (t.svc === "visit") steps = [["Copay", "Office visit: $30, deductible does not apply", "Clause 3.1, page 3", "Member pays $30"], ["Plan pays", `${money(t.allowed)} minus $30`, "", money(Math.max(0, t.allowed - 30))]];
+    else steps = [["Allowed amount", "Contracted rate (input)", "", money(t.allowed)], ["Deductible", `Remaining deductible ${money(t.dedLeft)}`, "Clause 1.1, page 1", money(ded)], ["Coinsurance 20%", `20% of ${money(after)}`, "Clause 2.1, page 2", money(coins)], ["Out-of-pocket cap", "Within the $6,000 maximum", "Clause 2.2, page 2", "Not reached"], ["Member pays", "Deductible plus coinsurance", "", money(ded + coins)], ["Plan pays", "Allowed minus member share", "", money(t.allowed - ded - coins)]];
+  } else {
+    const cap = 5000, room = t.rate * t.days, capped = cap * t.days, ratio = t.rate > cap ? cap / t.rate : 1;
+    const linked = S.scope === "room" ? 0 : t.surgeon, linkedAllowed = Math.round(linked * ratio), notLinked = (S.scope === "room" ? t.surgeon : 0) + t.implant;
+    const admissible = Math.min(250000, Math.min(room, capped) + linkedAllowed + notLinked), copay = Math.round(admissible * .1);
+    steps = [["Room rent cap", `${money(t.rate)} per day against a ${money(cap)} cap, ${t.days} days`, "Clause 2.1, page 2", money(Math.min(room, capped))],
+      ["Proportionate ratio", `${money(cap)} ÷ ${money(t.rate)} = ${ratio.toFixed(3)}`, "Clause 2.2, page 2", ratio.toFixed(3)],
+      ["Surgeon fee", S.scope === "room" ? "Scope set to room line only: not reduced" : `${money(t.surgeon)} × ${ratio.toFixed(3)}`, "Clause 2.2, page 2", money(S.scope === "room" ? t.surgeon : linkedAllowed)],
+      ["Implant", "Not room-linked: paid as billed", "", money(t.implant)], ["Non-medical items", "Not payable", "Clause 5.2, page 5", money(0)],
+      ["Sub-limit", "Knee replacement cap Rs. 2,50,000", "Clause 3.1, page 3", admissible >= 250000 ? "Reached" : "Not reached"],
+      ["Co-payment 10%", `10% of ${money(admissible)}`, "Clause 5.1, page 5", money(copay)], ["Plan pays", "Admissible minus co-pay", "", money(admissible - copay)]];
+  }
+  const ctl = market === "us" ? `<div class="two" style="gap:14px"><label>Service<select id="t_svc">${[["knee", "Total knee replacement"], ["mri", "MRI of a joint"], ["visit", "Office visit"], ["cosmetic", "Cosmetic procedure"]].map(([k, l]) => `<option value="${k}" ${t.svc === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label>Allowed amount ($)<input id="t_allowed" type="number" value="${t.allowed}"></label><label>Deductible remaining ($)<input id="t_dedLeft" type="number" value="${t.dedLeft}"></label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:24px;color:var(--ink)"><input id="t_auth" type="checkbox" ${t.auth ? "checked" : ""} style="width:auto;margin:0"> Authorization on file</label></div>`
+    : `<div class="two" style="gap:14px"><label>Room rate per day (Rs.)<input id="t_rate" type="number" value="${t.rate}"></label><label>Days<input id="t_days" type="number" value="${t.days}"></label>
+    <label>Surgeon fee, room-linked (Rs.)<input id="t_surgeon" type="number" value="${t.surgeon}"></label><label>Implant (Rs.)<input id="t_implant" type="number" value="${t.implant}"></label></div>`;
+  return `${topbar([{ t: "Console", href: "#/console" }, { t: "Benefit Plan Interpretation", href: "#/tile/benefits" }, { t: "Rule tester" }])}
+  ${tileBand("Rule tester", "Try a sample claim line against the rules. Every step shows the clause that decided it.")}
+  <div class="wrap lift">${tileTabs("tester")}<div class="two" style="grid-template-columns:.8fr 1.2fr;align-items:start"><div class="panel2"><h2 style="margin-bottom:14px">Sample claim line</h2>${ctl}
+    <p class="small muted" style="margin:16px 0 0">${S.published ? "Using the published rule set." : "Using draft rules. Publish to make them official."}</p></div>
+  <div class="panel2"><h2 style="margin-bottom:6px">How the rules apply</h2><div class="scroll"><table><thead><tr><th>Step</th><th>Rule</th><th>Source</th><th class="num">Result</th></tr></thead><tbody>
+  ${steps.map((s, i) => `<tr class="${i === steps.length - 1 ? "total" : ""}"><td>${esc(s[0])}</td><td>${esc(s[1])}</td><td>${s[2] ? `<span class="cite">${esc(s[2])}</span>` : ""}</td><td class="num">${esc(s[3])}</td></tr>`).join("")}</tbody></table></div></div></div><div style="height:60px"></div></div>`;
+}
+
+/* ---------- 6. amendments ---------- */
+function changesView() {
+  const m = M();
+  return `${topbar([{ t: "Console", href: "#/console" }, { t: "Benefit Plan Interpretation", href: "#/tile/benefits" }, { t: "Amendments" }])}
+  ${tileBand("Amendment: what changed", "Compare v1 with the amendment, see which claims it touches, then reprocess them.")}
+  <div class="wrap lift"><div class="panel2">${stepper(6)}</div><div style="height:20px"></div>${tileTabs("changes")}
+  <div class="two"><div class="panel2"><h2 style="margin-bottom:8px">Rule changes</h2><div class="scroll"><table class="diff"><thead><tr><th>Rule</th><th>v1</th><th>v2</th><th>Source</th></tr></thead><tbody>
+    ${m.changes.map(c => `<tr><td>${esc(c[0])}</td><td class="old">${esc(c[1])}</td><td class="new">${esc(c[2])}</td><td><span class="cite">${esc(c[3])}</span></td></tr>`).join("")}</tbody></table></div>
+    <div class="row" style="margin-top:16px"><button class="btn primary" id="loadv2">Publish v2</button><span class="small muted">Other tiles keep using v1 until v2 is published.</span></div></div>
+  <div class="panel2"><h2 style="margin-bottom:8px">Impact</h2><span class="chip warn">${esc(m.impact.claims)}</span>
+    <p class="small muted" style="margin:14px 0 6px">${esc(m.impact.line)}</p><div class="before-after"><span class="bignum dim">${esc(m.impact.before)}</span>${ico("arrow")}<span class="bignum">${esc(m.impact.after)}</span></div>
+    <p class="small muted" style="margin:14px 0">Sample figures for the design only. The build computes these from the claims.</p><button class="btn" id="reprocess" disabled>Reprocess affected claims</button></div></div><div style="height:60px"></div></div>`;
+}
+
+/* ---------- router ---------- */
+function render() {
+  const r = S.hashRoute !== undefined ? S.hashRoute : location.hash.replace(/^#\/?/, "");
+  S.route = r;
+  const app = $("#app");
+  if (r === "" || r === "how" || r === "signin") app.innerHTML = landing();
+  else if (r === "tile/benefits") app.innerHTML = tileOverview();
+  else if (r === "tile/benefits/review") app.innerHTML = reviewView();
+  else if (r === "tile/benefits/tester") app.innerHTML = testerView();
+  else if (r === "tile/benefits/changes") app.innerHTML = changesView();
+  else app.innerHTML = consoleView();
+  bind();
+  if (r === "how" || r === "signin") { const el = document.getElementById(r); if (el) el.scrollIntoView(); } else window.scrollTo(0, 0);
+}
+function bind() {
+  $$("a[href^='#/']").forEach(a => a.onclick = e => { e.preventDefault(); go(a.getAttribute("href").slice(1)); });
+  $$("[data-go-console]").forEach(b => b.onclick = () => go("/console"));
+  $$("[data-market]").forEach(b => b.onclick = () => { market = b.dataset.market; resetApproval(); render(); });
+  $$("[data-tile]").forEach(b => b.onclick = () => { const id = b.dataset.tile; if (id === "benefits") go("/tile/benefits"); else { S.panel = id; render(); } });
+  $$("[data-close]").forEach(b => b.onclick = () => { S.panel = null; render(); });
+  $$("[data-go]").forEach(b => b.onclick = () => go("/tile/benefits/" + b.dataset.go));
+  $$("[data-tab]").forEach(b => b.onclick = () => go("/tile/benefits" + (b.dataset.tab ? "/" + b.dataset.tab : "")));
+  const stepRoute = ["review", "review", "review", "review", "review", "tester", "changes"];
+  $$("[data-step]").forEach(b => b.onclick = () => go("/tile/benefits/" + stepRoute[+b.dataset.step]));
+  const lf = $("#lf"); if (lf) lf.onsubmit = e => { e.preventDefault(); go("/console"); };
+  $$("[data-role]").forEach(b => b.onclick = () => go("/console"));
+  $$("[data-rule]").forEach(el => { const pick = () => { S.sel = el.dataset.rule; render(); }; el.onclick = e => { if (!e.target.closest("button,input,label")) pick(); }; el.onkeydown = e => e.key === "Enter" && pick(); });
+  $$("[data-approve]").forEach(b => b.onclick = () => { const id = b.dataset.approve; S.approved[id] = !S.approved[id]; S.published = false; render(); });
+  $$("[data-edit]").forEach(b => b.onclick = () => toast("In the build, this opens an inline editor and records who changed the value."));
+  $$("input[name=scope]").forEach(i => i.onchange = () => { S.scope = i.value; S.published = false; render(); });
+  const pub = $("#publish"); if (pub) pub.onclick = () => { S.published = true; toast("Published as version 1. The claims tile can now read it."); render(); };
+  const v2 = $("#loadv2"); if (v2) v2.onclick = () => { toast("In the build, v2 becomes active and the impact below is computed."); const r = $("#reprocess"); if (r) r.disabled = false; };
+  const rp = $("#reprocess"); if (rp) rp.onclick = () => toast("In the build, affected claims are re-adjudicated and the differences are listed.");
+  const t = S.test[market];
+  if (S.route === "tile/benefits/tester" && t) {
+    const rerun = () => { if (market === "us") { t.svc = $("#t_svc").value; t.allowed = +$("#t_allowed").value; t.dedLeft = +$("#t_dedLeft").value; t.auth = $("#t_auth").checked; } else { t.rate = +$("#t_rate").value; t.days = +$("#t_days").value; t.surgeon = +$("#t_surgeon").value; t.implant = +$("#t_implant").value; } render(); };
+    $$("#app input,#app select").forEach(el => { if (el.id && el.id.startsWith("t_")) el.onchange = rerun; });
+  }
+}
+window.addEventListener("hashchange", () => { const h = location.hash.replace(/^#\/?/, ""); if (h !== S.route) { S.hashRoute = h; render(); } });
+render();
+</script>
+</body>
+</html>

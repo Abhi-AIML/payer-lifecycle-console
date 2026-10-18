@@ -1,0 +1,22 @@
+GOLD PPO PLAN: SUMMARY OF BENEFITS AND COVERAGE (SYNTHETIC)
+Effective 01 Jan 2026. Version 2 (amendment effective 01 Nov 2026).
+
+[Page 1] Section 1. Annual deductible
+1.1 The annual deductible is $1,000 per member and applies to inpatient and outpatient services.
+1.2 Preventive visits are not subject to the deductible.
+
+[Page 2] Section 2. Coinsurance and out-of-pocket maximum
+2.1 After the deductible, the plan pays 90% and the member pays 10% coinsurance for in-network services.
+2.2 The out-of-pocket maximum is $6,000 per member per year.
+
+[Page 3] Section 3. Copayments
+3.1 Primary care or specialist office visit: $30 copay per visit. The deductible does not apply.
+3.2 Physical therapy visit: $40 copay per visit. The deductible does not apply.
+
+[Page 4] Section 4. Prior authorization
+4.1 Total knee replacement requires prior authorization. Without it the service is denied.
+4.2 Advanced imaging such as MRI requires prior authorization. Without it the service is denied.
+
+[Page 5] Section 5. Exclusions
+5.1 Cosmetic procedures are not covered.
+5.2 Experimental treatments are not covered.

@@ -1,0 +1,52 @@
+# CI/CD for the Payer Lifecycle Console: test -> build -> push -> deploy to Cloud Run.
+# Run by deploy/deploy.sh, or by a Cloud Build trigger on every push to main (see docs/DEPLOY.md).
+# A failing test stops the pipeline before anything is built or deployed.
+substitutions:
+  _REGION: us-central1
+  _SERVICE: payer-console
+  _REPO: payer
+  _SHOW_DEMO_PASSWORD: "true"
+
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/payer-console-build@$PROJECT_ID.iam.gserviceaccount.com
+options:
+  logging: CLOUD_LOGGING_ONLY  # required with a dedicated build service account
+
+steps:
+  - id: test
+    name: python:3.13-slim
+    entrypoint: bash
+    args: ["-c", "pip install --quiet --disable-pip-version-check -r requirements-dev.txt && python -m unittest discover -s tests"]
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID", "."]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID"]
+
+  # Free-tier settings: scale to zero when idle, CPU billed only while a request is served.
+  # max-instances=1 is deliberate: demo state and sessions live in one process's memory.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+      - --region=${_REGION}
+      - --service-account=payer-console-run@$PROJECT_ID.iam.gserviceaccount.com
+      - --allow-unauthenticated  # the app has its own sign-in; judges open the link directly
+      - --min-instances=0
+      - --max-instances=1
+      - --cpu-throttling
+      - --cpu=1
+      - --memory=1Gi
+      - --concurrency=40
+      - --timeout=300  # a scanned PDF can take Gemini up to 120 s to transcribe
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,SANDBOX_TOKEN=sandbox-token:latest,DEMO_PASSWORD=demo-password:latest
+      - --set-env-vars=SHOW_DEMO_PASSWORD=${_SHOW_DEMO_PASSWORD}
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID

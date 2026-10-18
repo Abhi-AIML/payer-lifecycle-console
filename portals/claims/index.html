@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" style="display:none"></div>
+<script src="/shared.js"></script>
+<script src="/agents.js"></script>
+<script src="/module.js"></script>
+<script src="/pdfview.js"></script>
+<script>
+let META, AI, K = null, SAMP = { claims: [], members: [] }, PUB = null, CASE = null;
+const UI = { picked: null, mode: "sample", paste: "", file: null, member: "", changing: false, doc: null, note: "" };
+const TPL = { data: null, text: null, preview: "" };
+const canWork = () => ME && ME.role === "claims_analyst";
+const STEPS = [["Claim", "Load a sample or upload"], ["Intake", "Agent 1 reads the bill"], ["Adjudicate", "Agent 2 applies the rules"], ["Explain", "Agent 3 writes the letter"], ["Decide", "A person decides"]];
+const OUTCOME = { approve: ["ok", "Approve"], part_approve: ["blue", "Approve in part"], reject: ["bad", "Proposed rejection"], query: ["warn", "Query the hospital"] };
+const KIND = { member_share: ["mute", "Your share"], contractual: ["blue", "Contract"], reduction: ["warn", "Policy limit"], denial: ["bad", "Not payable"], unknown: ["mute", "Unknown"] };
+const CHK = { ok: ["ok", "Passed"], warn: ["warn", "Look"], fail: ["bad", "Failed"] };
+function money(n) { const c = META[MARKET].currency; return c.symbol + Number(n).toLocaleString(c.locale, { maximumFractionDigits: 2 }); }
+const cite = r => r ? `<span class="cite">cl. ${esc(r.clause)} · p.${r.page}</span>` : "";
+
+function documentCard() {
+  const picker = `<div class="docpick"><div class="small muted"><b>Sample claims</b> (synthetic). Each comes with a bill and, where relevant, a discharge summary and an approval letter.</div>
+    ${SAMP.claims.map(c => `<button class="pick" data-pick="${c.id}" aria-pressed="${UI.picked === c.id}">${ico("receipt")}<span><b>${esc(c.id)}: ${esc(c.patient)}</b><br><span class="small muted">${esc(c.provider)} · ${esc(c.summary)} · ${c.lines} lines</span></span><span class="right small"><b>${money(c.billed)}</b></span></button>`).join("")}
+    <details ${UI.mode !== "sample" ? "open" : ""}><summary class="small" style="cursor:pointer;padding:6px 0"><b>Or use your own bill</b> (upload a PDF, image or text file, or paste the text)</summary>
+      <div class="stack" style="margin-top:10px"><label>Policyholder<select id="member"><option value="">Choose…</option>${SAMP.members.map(m => `<option value="${m.id}" ${UI.member === m.id ? "selected" : ""}>${esc(m.name)} (${m.id})</option>`).join("")}</select></label>
+      <label>Upload a file<input type="file" id="file" accept=".pdf,.txt,.md,image/*"></label>
+      <div class="small muted">${AI.live ? "Scans and PDFs are read by Gemini into text first, then every line is verified against that text." : "Reading scans and PDFs needs a Gemini key. Text files and pasted text work now."}${UI.file ? ` Selected: <b>${esc(UI.file.name)}</b>` : ""}</div>
+      <label>Or paste the bill text<textarea id="paste" rows="5" placeholder="Patient: …&#10;Member ID: …&#10;Service date: 2026-10-01&#10;1 | CODE | Description | 1 | 2026-10-01 | 5,000">${esc(UI.paste)}</textarea></label></div></details>
+    <div class="row"><button class="btn primary" id="loadcase" ${canWork() ? "" : "disabled"}>${ico("upload")} Load claim</button>${canWork() ? "" : `<span class="small muted">Only a claims analyst can load and decide claims. You can read everything.</span>`}${CASE ? `<button class="btn" id="cancelchange">Keep the current claim</button>` : ""}</div></div>`;
+  const docTabs = CASE ? [["bill", "Hospital bill"], ["discharge", "Discharge summary"], ["preauth", "Approval letter"]].filter(([k]) => CASE.docs[k]) : [];
+  const summary = CASE ? `<div class="row" style="gap:10px"><b style="font-size:16px">${esc(CASE.title)}</b>${chip(CASE.source, "mute")}<span class="small muted">${esc(CASE.provider)} · ${docTabs.length} document(s)</span>
+      <span class="right row"><button class="btn sm" id="changecase">Load a different claim</button></span></div>
+    <div class="row" style="margin-top:14px;gap:10px"><b class="small">Supporting documents</b>${docTabs.map(([k, l]) => `<button class="btn sm primary" data-viewdoc="${k}">${ico("doc")} ${l} (PDF)</button>`).join("")}</div>` : "";
+  return `<section class="agent ${CASE ? "done" : "cur"}"><header><span class="num-badge">${CASE ? "✓" : "1"}</span><div><h2>Claim</h2><div class="small muted">Choose the bill and documents the agents will work on.</div></div></header>
+    <div class="body">${CASE && !UI.changing ? summary : picker}</div></section>`;
+}
+
+function intakeCard() {
+  const key = "intake", ran = CASE && CASE.intake;
+  let body;
+  if (!CASE) body = `<p class="muted">Load a claim first.</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The Intake Agent is reading the documents…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It reads the bill into lines, checks that every description and amount really appears in the document, matches items to tariff codes, and compares the bill with the discharge summary and approval letter.</p>`;
+  else {
+    const i = CASE.intake, s = i.summary;
+    body = `${logHtml(key, i.log)}<div data-results="${key}"${resultsAttr(key)}>
+      <div class="kv" style="margin-bottom:16px"><div><b>${s.lines}</b><span>bill lines read</span></div><div><b>${s.verified}/${s.lines}</b><span>found in the document</span></div><div><b class="${s.checks.fail ? "fail" : "pass"}">${s.checks.ok}</b><span>cross-checks passed</span></div><div><b>${s.checks.warn + s.checks.fail}</b><span>to look at or failed</span></div>
+        <div><b>${i.extractor === "gemini" ? "Gemini" : "Fallback"}</b><span>${i.extractor === "gemini" ? "read by the live model" : "rule-based reader, no Gemini key"}</span></div></div>
+      <h3 style="margin-bottom:8px">Cross-document checks</h3>
+      <div class="panel2" style="margin-bottom:16px">${i.checks.map(c => `<div class="li" style="align-items:flex-start;gap:10px;padding:7px 0"><span>${chip(CHK[c.status][1], CHK[c.status][0])}</span><span><b>${esc(c.title)}</b><br><span class="small muted">${esc(c.detail)}</span></span></div>`).join("")}</div>
+      <h3 style="margin-bottom:8px">Bill lines as read</h3>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>Description</th><th>Tariff code</th><th class="num">Qty</th><th class="num">Billed</th><th>Evidence</th></tr></thead><tbody>
+      ${i.lines.map(l => `<tr><td>${esc(l.id)}</td><td>${esc(l.desc)}<div class="small muted">${esc(l.category)}</div></td><td><span class="cite">${esc(l.code || "none")}</span><div class="small muted">${esc(l.coding)}</div></td><td class="num">${l.qty}</td><td class="num">${money(l.billed)}</td>
+        <td>${ev(l.evidence.desc_found, l.evidence.desc_found ? "Description found" : "Description NOT found")}<br>${ev(l.evidence.amount_found, l.evidence.amount_found ? "Amount found" : "Amount NOT found")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  }
+  return `<section class="agent ${ran ? "done" : CASE ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "2"}</span><div><h2>Intake Agent</h2><div class="small muted">Reads the bill, verifies each line against the document, checks the documents agree.</div></div>
+    <span class="right">${runButton(key, canWork() && CASE, "the Intake Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function adjudicateCard() {
+  const key = "adjudicate", ran = CASE && CASE.adjudication, ready = CASE && CASE.intake;
+  let body;
+  if (!ready) body = `<p class="muted">Run the Intake Agent first.</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The Adjudication Agent is running each line through the rules…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It applies the <b>published</b> rule set line by line with a deterministic engine. No AI decides an amount.</p>${PUB ? "" : `<div class="gate">No rule set is published for this market. <a href="/benefits/?m=${MARKET}">Publish one on the Benefit tile</a> first.</div>`}`;
+  else {
+    const a = CASE.adjudication, o = OUTCOME[a.outcome], t = a.totals;
+    body = `${logHtml(key, a.log)}<div data-results="${key}"${resultsAttr(key)}>
+      ${CASE.stale ? `<div class="gate" style="background:var(--rose-bg);color:var(--rose-ink)"><b>The published rules changed</b> from v${a.rule_version} to v${CASE.current_version} after this was adjudicated. Run this agent again to reprocess.</div>` : ""}
+      ${a.reprocessed_from ? `<div class="gate" style="background:var(--live-bg);color:var(--live-ink)"><b>Reprocessed.</b> Under v${a.reprocessed_from.version} the plan paid ${money(a.reprocessed_from.plan)}. Under v${a.rule_version} it pays ${money(t.plan)}.</div>` : ""}
+      <div class="row" style="margin-bottom:14px;gap:10px">${chip(o[1], o[0])}${chip(`Rules v${a.rule_version}`, "ok")}<span>${esc(a.route)}</span></div>
+      <div class="kv" style="margin-bottom:16px"><div><b>${money(t.billed)}</b><span>billed</span></div><div><b class="pass">${money(t.plan)}</b><span>${esc(META[MARKET].terms.payer.split(" / ")[0])} pays</span></div><div><b>${money(t.member)}</b><span>${esc(META[MARKET].terms.member.toLowerCase())} pays</span></div><div><b>${t.denied_lines}</b><span>lines not payable</span></div></div>
+      ${a.flags.length ? `<div class="panel2" style="margin-bottom:16px"><h3 style="margin-bottom:6px">Flags</h3>${a.flags.map(f => `<div class="li"><span class="mk" style="background:${f.severity === "block" ? "var(--rose-bg)" : "var(--amber-bg)"};color:${f.severity === "block" ? "var(--rose-ink)" : "var(--amber-ink)"}">${f.severity === "block" ? "!" : "i"}</span><span>${esc(f.text)}</span></div>`).join("")}</div>` : ""}
+      <h3 style="margin-bottom:8px">Why the amount differs, with the clause for each</h3>
+      <div class="scroll" style="margin-bottom:16px"><table class="tbl"><thead><tr><th>Reason</th><th>Type</th><th>Clause</th><th class="num">Amount</th></tr></thead><tbody>
+      ${a.by_reason.map(b => `<tr><td><b>${esc(b.label)}</b> <span class="cite">${esc(b.code)}</span><div class="small muted">lines ${esc(b.lines.join(", "))}</div>${b.quote ? `<details><summary class="small" style="cursor:pointer">Show the policy wording</summary><div class="q">“${esc(b.quote)}”</div></details>` : ""}</td>
+        <td>${chip(KIND[b.kind][1], KIND[b.kind][0])}</td><td>${b.ref ? cite(b.ref) : `<span class="small muted">contract or bill rule</span>`}</td><td class="num">${money(b.amount)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No reductions.</td></tr>`}</tbody></table></div>
+      <h3 style="margin-bottom:8px">Line by line</h3>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Line</th><th>What happened</th><th class="num">Billed</th><th class="num">Plan pays</th><th class="num">Patient pays</th></tr></thead><tbody>
+      ${a.result.lines.map(l => `<tr><td>${esc(l.id)}</td><td>${esc(l.desc)} ${l.status === "denied" ? chip("not payable", "bad") : l.status === "paid" ? chip("paid", "ok") : chip("reduced", "warn")}
+        ${l.reductions.map(r => `<div class="small muted">− ${money(r.amount)} ${esc((META[MARKET].reasons || {})[r.reason] || r.reason.replace(/_/g, " ").toLowerCase())} ${cite(r.ref)} ${r.note ? "· " + esc(r.note) : ""}</div>`).join("")}</td>
+        <td class="num">${money(l.billed)}</td><td class="num">${money(l.plan)}</td><td class="num">${money(l.member)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  }
+  return `<section class="agent ${ran && !CASE.stale ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran && !CASE.stale ? "✓" : "3"}</span><div><h2>Adjudication Agent</h2><div class="small muted">Applies the published rules with the deterministic engine. Every reduction cites its clause.</div></div>
+    <span class="right">${runButton(key, canWork() && ready && PUB, "the Adjudication Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function explainCard() {
+  const key = "explain", ran = CASE && CASE.explain, ready = CASE && CASE.adjudication && !CASE.stale;
+  let body;
+  if (!ready) body = `<p class="muted">${CASE && CASE.stale ? "Run the Adjudication Agent again first." : "Run the Adjudication Agent first."}</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The Explanation Agent is writing the letter from the computed facts…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. ${AI.live ? "Gemini" : "A template (no Gemini key)"} writes the letter from the computed facts only, to the <a href="#letter-template">configured letter template</a>. Code then checks that every amount and clause in it exists in those facts.</p>`;
+  else {
+    const e = CASE.explain, v = e.verification;
+    body = `${logHtml(key, e.log)}<div data-results="${key}"${resultsAttr(key)}>
+      <div class="row" style="margin-bottom:10px;gap:10px">${chip(e.source === "gemini" ? `Written by Gemini` : "Template", e.source === "gemini" ? "ai" : "mute")}${ev(v.amounts_ok, v.amounts_ok ? "Every amount is in the computed facts" : "Unknown amounts: " + v.unknown_amounts.join(", "))}${ev(v.clauses_ok, v.clauses_ok ? "Every clause is in the computed facts" : "Unknown clauses: " + v.unknown_clauses.join(", "))}</div>
+      ${e.note ? `<div class="gate">${esc(e.note)}</div>` : ""}<pre class="code" style="max-height:none;white-space:pre-wrap;margin-top:12px">${esc(e.letter)}</pre></div>`;
+  }
+  return `<section class="agent ${ran ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "4"}</span><div><h2>Explanation Agent</h2><div class="small muted">Writes the plain-language letter. Code verifies it against the facts.</div></div>
+    <span class="right">${runButton(key, canWork() && ready, "the Explanation Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function decideCard() {
+  const ready = CASE && CASE.explain && !CASE.stale, d = CASE && CASE.decision, a = CASE && CASE.adjudication;
+  if (d) {
+    const L = { approve: "Approved as proposed", query: "Query sent to the hospital", refer: "Referred to the insurer's medical team" }[d.action];
+    return `<section class="agent done"><header><span class="num-badge">✓</span><div><h2>Decision recorded</h2><div class="small muted">${esc(L)} by ${esc(d.by)}.</div></div></header><div class="body">
+      <div class="kv"><div><b>${esc(L)}</b><span>${esc(d.note || "no note")}</span></div><div><b>${money(d.plan)}</b><span>plan pays, under rules v${d.rule_version}</span></div></div>
+      <div class="row" style="margin-top:16px"><button class="btn" id="pushcase">Post the decision to the claims core</button><a class="btn primary" href="/denials/?m=${MARKET}&case=${CASE.id}#agent-1">Open the appeals workspace for this claim ${ico("arrow")}</a><a class="btn" href="/console/?m=${MARKET}">Back to the console</a></div></div></section>`;
+  }
+  const blocked = a && a.outcome === "query";
+  return `<section class="agent ${ready ? "cur" : "locked"}"><header><span class="num-badge">5</span><div><h2>Reviewer decision</h2><div class="small muted">A person decides. The agents only propose.</div></div></header><div class="body">
+    ${ready ? `<label>Note for the file (optional)<input id="note" maxlength="500" value="${esc(UI.note)}" placeholder="e.g. Checked the implant invoice"></label>
+    <div class="row" style="margin-top:12px;gap:10px"><button class="btn primary" data-decide="approve" ${canWork() && !blocked ? "" : "disabled"}>Approve as proposed</button><button class="btn" data-decide="query" ${canWork() ? "" : "disabled"}>Query the hospital</button>
+    <button class="btn" data-decide="refer" ${canWork() ? "" : "disabled"}>${MARKET === "in" ? "Refer to the insurer's medical team" : "Refer to denial review"}</button></div>
+    ${blocked ? `<div class="gate">A document check failed, so approving is blocked. Query the hospital for the missing item.</div>` : ""}` : `<p class="muted">Run the Explanation Agent first, so the decision comes with its explanation.</p>`}</div></section>`;
+}
+
+const CFG = {
+  uc: "claims", title: "Claims Adjustments & Reprocessing", sub: "4-step agent pipeline · human decision", onMarket: switchMarket,
+  get crumbs() { return [{ t: "Console", href: "/console/?m=" + MARKET }, { t: "Claims Adjustments & Reprocessing" }]; },
+  groups: () => { const d = [!!(CASE && CASE.intake), !!(CASE && CASE.adjudication && !CASE.stale), !!(CASE && CASE.explain), !!(CASE && CASE.decision)]; return [
+    { label: "Overview", items: [{ id: "overview", name: "Module overview", sub: "Stats and capabilities", icon: "grid" }] },
+    { label: "Agents", items: [
+      { id: "agent-1", num: 1, name: "Intake Agent", sub: "Bill to verified lines", done: d[0] },
+      { id: "agent-2", num: 2, name: "Adjudication Agent", sub: "Published rules, cited", done: d[1] },
+      { id: "agent-3", num: 3, name: "Explanation Agent", sub: "Letter and verification", done: d[2] },
+      { id: "agent-4", num: 4, name: "Reviewer decision", sub: "A person decides", done: d[3] }] },
+    { label: "Reference tables", items: [
+      { id: "ref-tariff", name: "Agreed tariff", sub: "Allowed rate per item", icon: "table" },
+      { id: "ref-members", name: "Policyholders", sub: "Balances and limits", icon: "table" },
+      { id: "ref-items", name: "Item master", sub: "Bill item categories", icon: "table" }] },
+    { label: "Configuration", items: [{ id: "letter-template", name: "Letter template", sub: "Patient letter wording", icon: "doc" }, { id: "settings", name: "Settings", sub: "System connections", icon: "gear" }] }]; },
+  status: () => `${chip(AI.live ? `AI: Gemini (${AI.model})` : "AI: rule-based fallback, no Gemini key", AI.live ? "ai" : "mute")}${PUB ? chip(`Rules published: v${PUB.version}`, "ok") : chip("No rule set published", "warn")}${CASE ? chip(`Claim: ${CASE.title}`, "blue") : ""}`,
+  launch: () => { UI.picked = UI.picked || (SAMP.claims[0] && SAMP.claims[0].id); if (modView() === "agent-1") render(); else location.hash = "#agent-1"; },
+  views: {
+    overview: () => { const k = K.claims; return overviewHtml({ kicker: "Payer operations console — module overview", title: "Claims Adjustments & Reprocessing",
+      desc: "Every deduction, with the clause that caused it. Agents read the bill, apply the published rules line by line, and explain the result. AI reads and writes; rules compute every amount; a person decides.",
+      kpis: [[k.adjudicated, "Claims adjudicated"], [k.lines_total ? `${k.lines_verified}/${k.lines_total}` : "—", "Bill lines verified in the document"], [k.decided, "Decisions recorded"]],
+      steps: [["Intake Agent", "Reads the bill, discharge summary and approval letter into lines. Code verifies every description and amount in the document and cross-checks that the documents agree."],
+      ["Adjudication Agent", "No AI. Applies the published rule set line by line with a deterministic engine. Every reduction cites its clause and page, and anomalies are flagged."],
+      ["Explanation Agent", "Writes the plain-language letter from the computed facts only. Code verifies every amount and clause in it before a person sees it."],
+      ["Reviewer decision", "A person approves, queries the hospital, or refers the claim. The decision can then be posted to the claims core."]] }); },
+    "agent-1": () => stepper(STEPS, stepStates(doneFlags())) + `<div style="height:22px"></div>` + documentCard() + intakeCard() + agentNav(null, ["agent-2", "Adjudication Agent"]),
+    "agent-2": () => ctxBar() + adjudicateCard() + agentNav(["agent-1", "Intake Agent"], ["agent-3", "Explanation Agent"]),
+    "agent-3": () => ctxBar() + explainCard() + agentNav(["agent-2", "Adjudication Agent"], ["agent-4", "Reviewer decision"]),
+    "letter-template": () => `<div class="panel2" id="tplmount"><p class="muted">Loading…</p></div>`,
+    "agent-4": () => ctxBar() + decideCard() + agentNav(["agent-3", "Explanation Agent"], null) }
+};
+const doneFlags = () => [!!CASE, !!(CASE && CASE.intake), !!(CASE && CASE.adjudication && !CASE.stale), !!(CASE && CASE.explain), !!(CASE && CASE.decision)];
+const ctxBar = () => CASE ? `<div class="row" style="margin-bottom:16px;gap:10px"><b>Working on</b>${chip(CASE.title, "blue")}<span class="small muted">${esc(CASE.provider)}</span><a class="btn sm right" href="#agent-1">Change claim</a></div>` : `<div class="gate" style="margin:0 0 16px">No claim is loaded. <a href="#agent-1">Load one on the Intake Agent page</a>.</div>`;
+function render() { Mod.render(CFG); bind(); if (modView() === "letter-template") loadTemplate(); }
+window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render(); });
+
+function openCaseDoc(kind) {
+  const label = { bill: "Hospital bill", discharge: "Discharge summary", preauth: "Approval letter" }[kind];
+  PDFV.open({ title: `${label}: ${CASE.title}`, pdfUrl: `/api/claims/cases/${CASE.id}/doc/${kind}.pdf`, pages: (CASE.doc_pages || {})[kind] || 1, page: 1, pageUrl: n => `/api/claims/cases/${CASE.id}/doc/${kind}/page/${n}.png` });
+}
+
+/* ---------- the patient letter template is configurable ---------- */
+async function loadTemplate() {
+  try { TPL.data = await api(`/claims/letter-template?market=${MARKET}`); } catch (e) { $("#tplmount").innerHTML = `<div class="gate">${esc(e.message)}</div>`; return; }
+  if (TPL.text === null) TPL.text = TPL.data.template;
+  drawTemplate();
+}
+function drawTemplate() {
+  const d = TPL.data, m = $("#tplmount"); if (!m || modView() !== "letter-template") return;
+  m.innerHTML = `<div class="row" style="gap:12px"><h2>Patient letter template</h2>${chip(d.is_default ? "Default template" : "Custom template", d.is_default ? "mute" : "ok")}</div>
+    <p class="muted" style="margin:6px 0 16px">The Explanation Agent writes every patient letter to this template, with or without Gemini. After it writes, code still checks that every amount and clause in the letter is in the computed facts. Placeholders are filled from the claim; the wording around them is yours.</p>
+    <textarea class="tpl" id="tpltext" ${canWork() ? "" : "readonly"} aria-label="Letter template">${esc(TPL.text)}</textarea>
+    <div class="row" style="margin:12px 0"><button class="btn primary" id="tplsave" ${canWork() ? "" : "disabled"}>Save template</button><button class="btn" id="tplpreview">Preview with sample values</button><button class="btn" id="tplreset" ${canWork() ? "" : "disabled"}>Reset to default</button>${canWork() ? "" : `<span class="small muted">Only a claims analyst can change the template. You can read it.</span>`}</div>
+    ${TPL.preview ? `<h3 style="margin:16px 0 8px">Preview</h3><pre class="code" style="max-height:none;white-space:pre-wrap">${esc(TPL.preview)}</pre>` : ""}
+    <h3 style="margin:20px 0 8px">Placeholders</h3><div class="scroll"><table class="tbl"><thead><tr><th>Placeholder</th><th>Filled with</th><th></th></tr></thead><tbody>${d.placeholders.map(p => `<tr><td><span class="cite">{${esc(p.name)}}</span></td><td>${esc(p.meaning)}</td><td>${p.required ? chip("required", "warn") : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  $("#tpltext").oninput = e => { TPL.text = e.target.value; };
+  $("#tplpreview").onclick = () => guard(async () => { TPL.preview = (await post(`/claims/letter-template/preview?market=${MARKET}`, { template: TPL.text })).preview; drawTemplate(); });
+  $("#tplsave").onclick = () => guard(async () => { TPL.data = await post(`/claims/letter-template?market=${MARKET}`, { template: TPL.text }); TPL.text = TPL.data.template; drawTemplate(); toast("Template saved. New letters use it."); });
+  $("#tplreset").onclick = () => guard(async () => { TPL.data = await post(`/claims/letter-template?market=${MARKET}`, { template: "" }); TPL.text = TPL.data.template; TPL.preview = ""; drawTemplate(); toast("Reset to the default template."); });
+}
+
+async function refresh() { CASE = await api(`/claims/cases/${CASE.id}`); }
+function bind() {
+  $$("[data-run]").forEach(b => b.onclick = () => runAgent(b.dataset.run));
+  $$("[data-pick]").forEach(b => b.onclick = () => { UI.picked = b.dataset.pick; UI.mode = "sample"; render(); });
+  const mem = $("#member"); if (mem) mem.onchange = () => { UI.member = mem.value; };
+  const f = $("#file"); if (f) f.onchange = () => { const file = f.files[0]; if (!file) { UI.file = null; return; } const rd = new FileReader(); rd.onload = () => { UI.file = { name: file.name, mime: file.type || "application/octet-stream", b64: String(rd.result).split(",")[1] }; UI.mode = "upload"; UI.picked = null; render(); }; rd.readAsDataURL(file); };
+  const pa = $("#paste"); if (pa) pa.oninput = () => { UI.paste = pa.value; if (pa.value.trim()) { UI.mode = "paste"; UI.picked = null; UI.file = null; } };
+  const ld = $("#loadcase"); if (ld) ld.onclick = () => guard(async () => {
+    const body = UI.picked ? { market: MARKET, claim_id: UI.picked } : UI.file ? { market: MARKET, filename: UI.file.name, mime: UI.file.mime, file_b64: UI.file.b64, member_id: UI.member } : UI.paste.trim() ? { market: MARKET, text: UI.paste, member_id: UI.member } : null;
+    if (!body) throw new Error("Choose a sample claim, upload a bill or paste the bill text.");
+    CASE = await post("/claims/cases", body); UI.changing = false; UI.doc = null; render(); toast("Claim loaded. Now run the Intake Agent.");
+  });
+  const cc = $("#changecase"); if (cc) cc.onclick = () => { UI.changing = true; UI.picked = null; render(); };
+  const cn = $("#cancelchange"); if (cn) cn.onclick = () => { UI.changing = false; render(); };
+  $$("[data-viewdoc]").forEach(b => b.onclick = () => openCaseDoc(b.dataset.viewdoc));
+  const pc = $("#pushcase"); if (pc) pc.onclick = () => guard(() => pushTo("claims", CASE.id, "Decision posted"));
+  const nt = $("#note"); if (nt) nt.oninput = () => { UI.note = nt.value; };
+  $$("[data-decide]").forEach(b => b.onclick = () => guard(async () => { CASE = await post(`/claims/cases/${CASE.id}/decide`, { action: b.dataset.decide, note: UI.note }); render(); toast("Decision recorded."); }));
+}
+function runAgent(key) { return runAgentWith(key, async () => { CASE = await post(`/claims/cases/${CASE.id}/${key}`); }, render); }
+async function load() {
+  [META, SAMP, PUB, AI, K] = await Promise.all([api("/meta"), api(`/claims/samples?market=${MARKET}`), api(`/benefits/published?market=${MARKET}`), api("/ai/status"), api(`/kpis?market=${MARKET}`)]);
+  const cases = await api(`/claims/cases?market=${MARKET}`);
+  CASE = cases.length ? await api(`/claims/cases/${cases[0].id}`) : null;
+  render();
+}
+function switchMarket() { CASE = null; UI.picked = null; UI.changing = false; load(); }
+(async () => { try { await boot(); await load(); } catch (e) { if (e.message !== "wrong role" && e.message !== "Please sign in.") document.body.insertAdjacentHTML("afterbegin", `<div class="wrap" style="padding-block:30px">Could not load: ${esc(e.message)}</div>`); } })();
+</script>
+</body>
+</html>

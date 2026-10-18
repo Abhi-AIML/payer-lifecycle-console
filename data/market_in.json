@@ -1,0 +1,618 @@
+{
+ "market": "in",
+ "label": "India",
+ "short": "IN",
+ "currency": {
+  "symbol": "Rs. ",
+  "locale": "en-IN"
+ },
+ "terms": {
+  "payer": "Insurer / TPA",
+  "member": "Policyholder",
+  "plan": "Policy",
+  "claim": "Claim"
+ },
+ "plan": {
+  "name": "Suraksha Health Gold",
+  "scope_note": "Models one retail-style health policy. Product filing is not modelled. The IRDAI Master Circular on Health Insurance Business (29 May 2024) sets the 1-hour cashless and 3-hour discharge decisions. It has no clause on proportionate deduction, so the policy wording governs which charges it reaches."
+ },
+ "samples": [
+  {
+   "id": "in_v1",
+   "title": "Suraksha Health Gold policy wording (base, v1)",
+   "file": "in_policy_v1.txt",
+   "kind": "base"
+  },
+  {
+   "id": "in_v2",
+   "title": "Suraksha Health Gold amendment (v2, effective 01 Nov 2026)",
+   "file": "in_policy_v2.txt",
+   "kind": "amendment"
+  }
+ ],
+ "required": [
+  "sum_insured",
+  "room_rent_cap"
+ ],
+ "ambiguities": [
+  {
+   "category": "proportionate_scope",
+   "title": "ICU charges and the proportionate deduction",
+   "message": "The wording lists surgeon, anaesthesia, nursing and operation theatre fees as room-linked, and says implants, medicines, consumables and diagnostic tests are not reduced. It is silent on ICU charges. Published explanations disagree on ICU, and the IRDAI Master Circular on Health Insurance Business (29 May 2024) has no clause on it, so the policy wording governs. A reviewer must choose how to treat ICU, and should confirm it with the insurer.",
+   "options": [
+    {
+     "value": "linked",
+     "label": "ICU charges are room-linked and are reduced"
+    },
+    {
+     "value": "icu_exempt",
+     "label": "ICU charges are not reduced"
+    }
+   ]
+  }
+ ],
+ "crosswalk": {
+  "total_knee_replacement": {
+   "desc": "Total knee replacement",
+   "codes": [
+    {
+     "system": "ICD-10",
+     "code": "M17 (knee osteoarthritis group)",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "Insurer package",
+     "code": "PKG-ORTHO-TKR",
+     "valid_from": "2024-01-01",
+     "valid_to": null
+    }
+   ]
+  },
+  "cataract": {
+   "desc": "Cataract surgery",
+   "codes": [
+    {
+     "system": "ICD-10",
+     "code": "H25 (age-related cataract group)",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "Insurer package",
+     "code": "PKG-OPHTH-CAT",
+     "valid_from": "2026-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "Insurer package",
+     "code": "PKG-OPHTH-CAT-OLD",
+     "valid_from": "2020-01-01",
+     "valid_to": "2025-12-31"
+    }
+   ]
+  },
+  "joint_replacement": {
+   "desc": "Joint replacement (waiting-period group)",
+   "codes": [
+    {
+     "system": "ICD-10",
+     "code": "M16 (hip osteoarthritis group)",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "ICD-10",
+     "code": "M17 (knee osteoarthritis group)",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "Insurer package",
+     "code": "PKG-ORTHO-TKR",
+     "valid_from": "2024-01-01",
+     "valid_to": null
+    }
+   ]
+  },
+  "non_medical": {
+   "desc": "Non-medical items (administrative, toiletries, consumables)",
+   "codes": [
+    {
+     "system": "Internal category",
+     "code": "NONMED",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    }
+   ]
+  }
+ },
+ "licensing_note": "Package identifiers here are illustrative placeholders, not a real insurer or TPA code list.",
+ "tariff": {
+  "ROOM_DELUXE": {
+   "desc": "Deluxe room, per day",
+   "rate": 9000
+  },
+  "ROOM_SEMI": {
+   "desc": "Semi-private room, per day",
+   "rate": 3500
+  },
+  "SURG_KNEE": {
+   "desc": "Surgeon fee, knee replacement",
+   "rate": 60000
+  },
+  "ANAES_KNEE": {
+   "desc": "Anaesthesia, knee replacement",
+   "rate": 12000
+  },
+  "OT_KNEE": {
+   "desc": "Operation theatre charges",
+   "rate": 25000
+  },
+  "IMPLANT_KNEE": {
+   "desc": "Knee implant",
+   "rate": 90000
+  },
+  "TOILETRIES": {
+   "desc": "Toiletries and consumables",
+   "rate": 4500
+  },
+  "ADMIN": {
+   "desc": "Administrative charges",
+   "rate": 1500
+  },
+  "SURG_CAT": {
+   "desc": "Cataract surgery package",
+   "rate": 38000
+  },
+  "LENS": {
+   "desc": "Intra-ocular lens",
+   "rate": 3500
+  },
+  "SURG_APP": {
+   "desc": "Appendectomy package",
+   "rate": 70000
+  },
+  "CHEMO": {
+   "desc": "Chemotherapy cycle",
+   "rate": 45000
+  },
+  "DAYCARE": {
+   "desc": "Day-care charges",
+   "rate": 5000
+  },
+  "ICU_DAY": {
+   "desc": "ICU, per day",
+   "rate": 12000
+  },
+  "SURG_CARD": {
+   "desc": "Surgeon fee, angioplasty",
+   "rate": 80000
+  },
+  "STENT": {
+   "desc": "Coronary stent",
+   "rate": 70000
+  }
+ },
+ "members": {
+  "M-IN-1": {
+   "name": "Ravi Kumar",
+   "policy_start": "2024-04-01",
+   "sum_insured": 500000,
+   "used": 0
+  },
+  "M-IN-2": {
+   "name": "Meera Nair",
+   "policy_start": "2023-01-01",
+   "sum_insured": 500000,
+   "used": 0
+  },
+  "M-IN-3": {
+   "name": "Sana Khan",
+   "policy_start": "2026-09-25",
+   "sum_insured": 500000,
+   "used": 0
+  },
+  "M-IN-4": {
+   "name": "Arjun Singh",
+   "policy_start": "2023-06-01",
+   "sum_insured": 500000,
+   "used": 0
+  }
+ },
+ "auto_settle_max": 100000,
+ "above_tariff_ratio": 1.5,
+ "appeal_filing_days": 30,
+ "clock_note": "The 1-hour cashless authorization and 3-hour discharge authorization are in the IRDAI Master Circular on Health Insurance Business (29 May 2024). Grievance, appeal and Ombudsman timelines are not verified and must be checked before any claim in a pitch.",
+ "reasons": {
+  "TARIFF": {
+   "code": "IN-TAR",
+   "label": "Charge above agreed hospital tariff",
+   "kind": "contractual",
+   "edit": "Compare each billed charge with the hospital agreed tariff before submission.",
+   "member": "The hospital agreed tariff for this item is lower than what was billed."
+  },
+  "ROOM_CAP": {
+   "code": "IN-RENT",
+   "label": "Room rent above policy limit",
+   "kind": "reduction",
+   "edit": "Check the chosen room against the policy room-rent limit when estimating the cost.",
+   "member": "Your policy covers room rent only up to a daily limit, and the room chosen cost more."
+  },
+  "PROPORTIONATE": {
+   "code": "IN-PROP",
+   "label": "Proportionate deduction (room-linked charges)",
+   "kind": "reduction",
+   "edit": "Warn the patient about proportionate deductions when a room above the limit is chosen.",
+   "member": "Because the room cost more than your limit, charges linked to the room are reduced in the same proportion."
+  },
+  "SUB_LIMIT": {
+   "code": "IN-SUB",
+   "label": "Procedure sub-limit reached",
+   "kind": "reduction",
+   "edit": "Show the procedure sub-limit in the pre-authorization estimate.",
+   "member": "Your policy caps what it pays for this procedure."
+  },
+  "COPAY_PCT": {
+   "code": "IN-COPAY",
+   "label": "Co-payment applied",
+   "kind": "member_share",
+   "edit": "",
+   "member": "Your policy requires you to pay a percentage of every admissible claim."
+  },
+  "NON_PAYABLE": {
+   "code": "IN-NMED",
+   "label": "Non-payable item",
+   "kind": "denial",
+   "edit": "Separate non-payable items on the bill before submission.",
+   "member": "Items such as administrative charges and consumables are not payable under the policy."
+  },
+  "NOT_COVERED": {
+   "code": "IN-EXCL",
+   "label": "Excluded procedure",
+   "kind": "denial",
+   "edit": "Screen the procedure against policy exclusions before submission.",
+   "member": "This procedure is excluded under your policy."
+  },
+  "WAITING_PERIOD": {
+   "code": "IN-WAIT",
+   "label": "Waiting period not completed",
+   "kind": "denial",
+   "edit": "Check the policy start date against waiting periods at pre-authorization.",
+   "member": "Your policy has a waiting period for this treatment, and it was not complete on the admission date."
+  },
+  "DUPLICATE": {
+   "code": "IN-DUP",
+   "label": "Duplicate charge",
+   "kind": "denial",
+   "edit": "Detect repeated charges (same item, same date) before submission.",
+   "member": "This charge repeats another charge on the same bill."
+  },
+  "SUM_INSURED": {
+   "code": "IN-SI",
+   "label": "Sum insured exhausted",
+   "kind": "reduction",
+   "edit": "Track the remaining sum insured when approving the estimate.",
+   "member": "Your policy sum insured was reached."
+  }
+ },
+ "claims": [
+  {
+   "id": "CLM-IN-2001",
+   "member": "M-IN-1",
+   "provider": "Lakeview Multispeciality Hospital",
+   "service_date": "2026-09-22",
+   "stay_days": 7,
+   "accident": false,
+   "procedure": "total_knee_replacement",
+   "authorizations": [
+    {
+     "ref": "PA-IN-7781",
+     "service_keys": [
+      "total_knee_replacement"
+     ]
+    }
+   ],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "ROOM_DELUXE",
+     "desc": "Deluxe room, 7 days",
+     "service_key": "room",
+     "category": "room",
+     "qty": 7,
+     "billed": 63000,
+     "date": "2026-09-22"
+    },
+    {
+     "id": "L2",
+     "code": "SURG_KNEE",
+     "desc": "Surgeon fee",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 60000,
+     "date": "2026-09-23"
+    },
+    {
+     "id": "L3",
+     "code": "ANAES_KNEE",
+     "desc": "Anaesthesia",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 12000,
+     "date": "2026-09-23"
+    },
+    {
+     "id": "L4",
+     "code": "OT_KNEE",
+     "desc": "Operation theatre charges",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 25000,
+     "date": "2026-09-23"
+    },
+    {
+     "id": "L5",
+     "code": "IMPLANT_KNEE",
+     "desc": "Knee implant",
+     "service_key": "implant",
+     "category": "implant",
+     "qty": 1,
+     "billed": 95000,
+     "date": "2026-09-23"
+    },
+    {
+     "id": "L6",
+     "code": "TOILETRIES",
+     "desc": "Toiletries and consumables",
+     "service_key": "non_medical",
+     "category": "non_medical",
+     "qty": 1,
+     "billed": 4500,
+     "date": "2026-09-22"
+    },
+    {
+     "id": "L7",
+     "code": "ADMIN",
+     "desc": "Administrative charges",
+     "service_key": "non_medical",
+     "category": "non_medical",
+     "qty": 1,
+     "billed": 1500,
+     "date": "2026-09-22"
+    }
+   ]
+  },
+  {
+   "id": "CLM-IN-2002",
+   "member": "M-IN-2",
+   "provider": "Lakeview Multispeciality Hospital",
+   "service_date": "2026-10-01",
+   "stay_days": 1,
+   "accident": false,
+   "procedure": "cataract",
+   "authorizations": [
+    {
+     "ref": "PA-IN-7790",
+     "service_keys": [
+      "cataract"
+     ]
+    }
+   ],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "ROOM_SEMI",
+     "desc": "Semi-private room, 1 day",
+     "service_key": "room",
+     "category": "room",
+     "qty": 1,
+     "billed": 3500,
+     "date": "2026-10-01"
+    },
+    {
+     "id": "L2",
+     "code": "SURG_CAT",
+     "desc": "Cataract surgery package",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 38000,
+     "date": "2026-10-01"
+    },
+    {
+     "id": "L3",
+     "code": "LENS",
+     "desc": "Intra-ocular lens",
+     "service_key": "implant",
+     "category": "implant",
+     "qty": 1,
+     "billed": 3500,
+     "date": "2026-10-01"
+    }
+   ]
+  },
+  {
+   "id": "CLM-IN-2003",
+   "member": "M-IN-3",
+   "provider": "Lakeview Multispeciality Hospital",
+   "service_date": "2026-10-04",
+   "stay_days": 3,
+   "accident": false,
+   "procedure": "appendectomy",
+   "authorizations": [],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "ROOM_SEMI",
+     "desc": "Semi-private room, 3 days",
+     "service_key": "room",
+     "category": "room",
+     "qty": 3,
+     "billed": 10500,
+     "date": "2026-10-04"
+    },
+    {
+     "id": "L2",
+     "code": "SURG_APP",
+     "desc": "Appendectomy package",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 70000,
+     "date": "2026-10-05"
+    }
+   ]
+  },
+  {
+   "id": "CLM-IN-2004",
+   "member": "M-IN-4",
+   "provider": "Lakeview Multispeciality Hospital",
+   "service_date": "2026-10-03",
+   "stay_days": 1,
+   "accident": false,
+   "procedure": "chemotherapy",
+   "authorizations": [
+    {
+     "ref": "PA-IN-7802",
+     "service_keys": [
+      "chemotherapy"
+     ]
+    }
+   ],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "CHEMO",
+     "desc": "Chemotherapy cycle",
+     "service_key": "procedure",
+     "category": "procedure",
+     "qty": 1,
+     "billed": 80000,
+     "date": "2026-10-03"
+    },
+    {
+     "id": "L2",
+     "code": "DAYCARE",
+     "desc": "Day-care charges",
+     "service_key": "daycare",
+     "category": "daycare",
+     "qty": 1,
+     "billed": 5000,
+     "date": "2026-10-03"
+    },
+    {
+     "id": "L3",
+     "code": "DAYCARE",
+     "desc": "Day-care charges",
+     "service_key": "daycare",
+     "category": "daycare",
+     "qty": 1,
+     "billed": 5000,
+     "date": "2026-10-03"
+    },
+    {
+     "id": "L4",
+     "code": "ADMIN",
+     "desc": "Administrative charges",
+     "service_key": "non_medical",
+     "category": "non_medical",
+     "qty": 1,
+     "billed": 1000,
+     "date": "2026-10-03"
+    }
+   ]
+  },
+  {
+   "id": "CLM-IN-2005",
+   "member": "M-IN-2",
+   "provider": "Lakeview Multispeciality Hospital",
+   "service_date": "2026-10-06",
+   "stay_days": 6,
+   "accident": false,
+   "procedure": "angioplasty",
+   "authorizations": [
+    {
+     "ref": "PA-IN-7811",
+     "service_keys": [
+      "angioplasty"
+     ]
+    }
+   ],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "ROOM_DELUXE",
+     "desc": "Deluxe room, 4 days",
+     "service_key": "room",
+     "category": "room",
+     "qty": 4,
+     "billed": 36000,
+     "date": "2026-10-06"
+    },
+    {
+     "id": "L2",
+     "code": "ICU_DAY",
+     "desc": "ICU, 2 days",
+     "service_key": "icu",
+     "category": "icu",
+     "room_linked": true,
+     "qty": 2,
+     "billed": 24000,
+     "date": "2026-10-06"
+    },
+    {
+     "id": "L3",
+     "code": "SURG_CARD",
+     "desc": "Surgeon fee, angioplasty",
+     "service_key": "procedure",
+     "category": "procedure",
+     "room_linked": true,
+     "qty": 1,
+     "billed": 80000,
+     "date": "2026-10-07"
+    },
+    {
+     "id": "L4",
+     "code": "STENT",
+     "desc": "Coronary stent",
+     "service_key": "implant",
+     "category": "implant",
+     "qty": 1,
+     "billed": 70000,
+     "date": "2026-10-07"
+    }
+   ]
+  }
+ ],
+ "parties": {
+  "insurer": "Suraksha General Insurance",
+  "tpa": "MediLink TPA",
+  "grievance_office": "Grievance Redressal Officer"
+ },
+ "escalation": [
+  {
+   "step": "Insurer Grievance Redressal Officer",
+   "note": "Written grievance. One source says the insurer should reply within 15 days.",
+   "verified": false
+  },
+  {
+   "step": "IRDAI Bima Bharosa portal",
+   "note": "If the grievance is unresolved or unanswered.",
+   "verified": false
+  },
+  {
+   "step": "Insurance Ombudsman",
+   "note": "One source says claims up to Rs. 50 lakh, filed within a year of the final rejection.",
+   "verified": false
+  }
+ ]
+}

@@ -1,0 +1,5 @@
+# Runtime dependencies, pinned so the deployed image matches what the tests ran against.
+fastapi==0.138.0
+uvicorn==0.48.0
+pydantic==2.12.5
+pymupdf==1.28.2

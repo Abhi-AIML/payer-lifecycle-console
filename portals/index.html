@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" style="display:none"></div>
+<script src="/shared.js"></script>
+<script>
+const TILES = [
+  { col: 0, row: 0, ic: "doc", name: "Benefit Plan Interpretation & Coding", what: "Three AI agents turn plan documents into verified, cited, system-ready rules.", built: true, live: true },
+  { col: 0, row: 1, ic: "shield", name: "Prior Auth & Medical Necessity Flagging", what: "Checks requests against benefit rules and criteria.", built: false },
+  { col: 1, row: 0, ic: "inbox", name: "Manual Prior Auth Submission Support", what: "AI-assisted intake and routing.", built: false },
+  { col: 1, row: 1, ic: "layers", name: "Provider Onboarding & Contract Management", what: "Captures contract terms from documents.", built: false },
+  { col: 2, row: 0, span: true, ic: "scale", name: "COB Primary Determination", what: "Decides which coverage pays first.", built: false },
+  { col: 3, row: 0, ic: "receipt", name: "Claims Adjustments & Reprocessing", what: "Line-by-line adjudication, each reduction citing its clause.", built: true, live: true },
+  { col: 3, row: 1, ic: "x", name: "Denial Mgmt, Redressal & Pre-emptive Edits", what: "Classifies reductions, finds the cause, drafts the appeal.", built: true },
+  { col: 4, row: 0, ic: "receipt", name: "Manual Invoice Generation & Premium Reconciliation", what: "Invoices and premium reconciliation.", built: false, live: true },
+  { col: 4, row: 1, ic: "inbox", name: "Payment Exception Triage & Routing", what: "Classifies and routes payment exceptions.", built: false },
+  { col: 5, row: 0, span: true, ic: "users", name: "Appeals / Grievance Intake Processing", what: "Classifies disputes and tracks response clocks.", built: false }];
+const COLS = ["Benefit coding", "Provider", "Member / Enrollment", "Claims", "Billing", "Customer service"];
+const tile = t => `<div class="tile ${t.built ? "built" : "planned"}" style="grid-column:${t.col + 1};grid-row:${t.span ? "2 / span 2" : t.row + 2}"><div class="ti">${ico(t.ic)}${t.live ? `<span class="livepip">LIVE</span>` : ""}</div><b>${esc(t.name)}</b><span class="d">${esc(t.what)}</span><span class="foot"><span class="feas">High</span><span class="state">${t.built ? "Built" : "Planned"}</span></span></div>`;
+const ACCOUNTS = [["M", "Benefits analyst", "Runs the three agents, approves rules, publishes", "meera"], ["A", "Claims analyst", "Adjudicates claims and works denials", "arjun"], ["K", "Operations manager", "Oversees everything, read-only", "kavita"]];
+
+document.getElementById("app").innerHTML = `
+<section class="hero"><div class="wrap" style="padding-block:0"><nav class="nav"><a class="logo" href="/">${MARK} Payer Lifecycle Console</a><span class="right"></span><a class="l" href="#how">How it works</a><a class="l" href="#signin">Sign in</a></nav></div>
+  <div class="wrap two-col"><div><div class="kicker" style="color:#8FB0F5">Payer operations · US and India</div>
+    <h1 style="margin-top:14px">Every payer decision, explained and sourced.</h1>
+    <p class="lead">From the plan document to the claim to the appeal, each step shows the clause behind it. AI reads. Rules decide. People confirm.</p>
+    <div class="row"><a class="btn light" href="#signin">Sign in ${ico("arrow")}</a><a class="btn ghost" href="#how">See how it works</a></div></div>
+  <div class="demo" aria-label="Example: one clause traced to one payment">
+    <div class="stepbox"><div class="lab">1 · The document says</div><span class="cite">Page 2 · Clause 2.1</span><p style="margin:8px 0 0"><mark>Room rent is covered up to Rs. 5,000 per day.</mark></p></div>
+    <div class="arrow">${ico("down")}</div>
+    <div class="stepbox"><div class="lab">2 · An agent extracts it, a person approves it</div><div class="row"><b style="font:800 19px var(--font-display)">Room-rent cap · Rs. 5,000 / day</b><span class="chip ok">${ico("check")} Verified in the source</span></div></div>
+    <div class="arrow">${ico("down")}</div>
+    <div class="stepbox"><div class="lab">3 · The claim line is decided</div><div class="row"><span>Deluxe room billed Rs. 9,000 / day</span><b class="right" style="font:800 19px var(--font-display)">Paid Rs. 5,000</b></div><div class="small muted" style="margin-top:6px">Reduced by Rs. 4,000 per day. The reason cites <span class="cite">Clause 2.1</span></div></div></div></div></section>
+<section class="sec"><div class="wrap"><h2>One console for the payer lifecycle</h2><p class="muted" style="margin:6px 0 20px">Ten processes from the benefit plan to the appeal. Three are built.</p>
+  <div class="heat" aria-hidden="true">${COLS.map(c => `<div class="colhead">${c}</div>`).join("")}${TILES.map(tile).join("")}</div></div></section>
+<section class="sec" id="how" style="background:var(--soft)"><div class="wrap"><h2>Three agents on the first process</h2><p class="muted" style="margin:0 0 24px">Each agent has a Run button. Nothing moves forward until a person approves.</p>
+  <div class="how"><div><div class="ic" style="background:var(--ai)">${ico("spark")}</div><h3>1 · Interpretation Agent</h3><p class="muted">Reads the plan document and proposes rules, each with its page, clause and exact quote. Code then checks that every quote exists and every value appears in it.</p></div>
+  <div><div class="ic" style="background:var(--blue)">${ico("layers")}</div><h3>2 · Configuration &amp; Coding Agent</h3><p class="muted">Turns approved rules into a system-ready payload and maps services to codes, flagging missing, one-to-many and expired mappings.</p></div>
+  <div><div class="ic" style="background:var(--live)">${ico("shield")}</div><h3>3 · Validation Agent</h3><p class="muted">Generates boundary-case tests, runs the loaded configuration through a deterministic engine, and reports every difference as a defect.</p></div></div></div></section>
+<section class="sec" id="signin"><div class="wrap signin"><div><h2>Sign in</h2><p class="muted">Pick a role to fill the form. Each role sees only what it needs.</p>
+  <div class="roles" style="grid-template-columns:1fr;margin-top:18px">${ACCOUNTS.map(([i, r, d, u]) => `<button class="rolecard" data-role="${u}"><span class="avatar" style="background:var(--navy);color:#fff">${i}</span><span><b>${r}</b><br><span class="small muted">${d}</span></span><span class="cite right">${u}</span></button>`).join("")}</div></div>
+  <form class="form" id="lf"><h3>Account</h3><label>Username<input id="u" autocomplete="username" required></label><label>Password<input id="p" type="password" autocomplete="current-password" required></label>
+  <div id="err" role="alert" class="small" style="color:var(--rose-ink);min-height:1.2em"></div><button class="btn primary" id="go" type="submit">Sign in</button>
+  <div class="small muted" id="pwhint">${ico("lock")} Demo accounts only. Use the password supplied with the submission.</div></form></div></section>
+<footer class="sec" style="padding-block:24px;border-top:1px solid var(--line)"><div class="wrap small muted">Prototype with synthetic data. Regulatory details need verification before any pitch.</div></footer>`;
+
+let DEMO_PW = null;  // shown only when the server allows it (SHOW_DEMO_PASSWORD)
+fetch("/api/auth/demo").then(r => r.json()).then(d => {
+  DEMO_PW = d.password;
+  if (DEMO_PW) $("#pwhint").innerHTML = `${ico("lock")} Demo accounts only. Every demo account uses the password <b>${esc(DEMO_PW)}</b>. A real deployment never publishes credentials.`;
+}).catch(() => {});
+$$("[data-role]").forEach(b => b.onclick = () => { $("#u").value = b.dataset.role; if (DEMO_PW) $("#p").value = DEMO_PW; ($("#p").value ? $("#go") : $("#p")).focus(); });
+$("#lf").onsubmit = async e => {
+  e.preventDefault(); $("#err").textContent = ""; $("#go").disabled = true;
+  try { await post("/auth/login", { username: $("#u").value, password: $("#p").value }); location.href = "/console/"; }
+  catch (ex) { $("#err").textContent = ex.message; $("#p").value = ""; $("#go").disabled = false; }
+};
+fetch("/api/auth/me", { credentials: "same-origin" }).then(r => r.ok ? r.json() : null).then(me => {
+  if (me) $("#signin .wrap").insertAdjacentHTML("afterbegin", `<div class="form" style="grid-column:1/-1;flex-direction:row"><b>You are signed in as ${esc(me.name)}.</b> <a class="btn primary" href="/console/">Continue to the console</a> <button class="btn" id="so2">Sign out</button></div>`) || ($("#so2").onclick = signOut);
+}).catch(() => {});
+</script>
+</body>
+</html>

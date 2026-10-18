@@ -1,0 +1,379 @@
+{
+ "market": "us",
+ "label": "United States",
+ "short": "US",
+ "currency": {
+  "symbol": "$",
+  "locale": "en-US"
+ },
+ "terms": {
+  "payer": "Health plan",
+  "member": "Member",
+  "plan": "Plan",
+  "claim": "Claim"
+ },
+ "plan": {
+  "name": "Gold PPO",
+  "scope_note": "Models a commercial PPO plan only. Medicare Advantage and Medicaid managed care have different rules and are not modelled."
+ },
+ "samples": [
+  {
+   "id": "us_v1",
+   "title": "Gold PPO Summary of Benefits (base, v1)",
+   "file": "us_plan_v1.txt",
+   "kind": "base"
+  },
+  {
+   "id": "us_v2",
+   "title": "Gold PPO amendment (v2, effective 01 Nov 2026)",
+   "file": "us_plan_v2.txt",
+   "kind": "amendment"
+  }
+ ],
+ "required": [
+  "deductible",
+  "coinsurance_member_pct",
+  "oop_max"
+ ],
+ "ambiguities": [],
+ "crosswalk": {
+  "total_knee_replacement": {
+   "desc": "Total knee replacement surgery",
+   "codes": [
+    {
+     "system": "CPT",
+     "code": "27447",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "ICD-10-CM",
+     "code": "M17 (knee osteoarthritis group)",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    }
+   ]
+  },
+  "advanced_imaging": {
+   "desc": "Advanced imaging of a joint (MRI)",
+   "codes": [
+    {
+     "system": "CPT",
+     "code": "73721",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "73722",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "73723",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    }
+   ]
+  },
+  "office_visit": {
+   "desc": "Office visit, established patient",
+   "codes": [
+    {
+     "system": "CPT",
+     "code": "99212",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "99213",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "99214",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "99215",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    }
+   ]
+  },
+  "physical_therapy": {
+   "desc": "Physical therapy session",
+   "codes": [
+    {
+     "system": "CPT",
+     "code": "97110",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    },
+    {
+     "system": "CPT",
+     "code": "97112",
+     "valid_from": "2020-01-01",
+     "valid_to": null
+    }
+   ]
+  }
+ },
+ "licensing_note": "CPT and CDT descriptions are licensed. This demo shows code numbers with plain-language descriptions of our own. Production use needs the relevant licences.",
+ "tariff": {
+  "27447": {
+   "desc": "Total knee replacement surgery",
+   "rate": 18500
+  },
+  "99214": {
+   "desc": "Office visit, established patient",
+   "rate": 135
+  },
+  "73721": {
+   "desc": "MRI of a joint, no contrast",
+   "rate": 780
+  },
+  "97110": {
+   "desc": "Therapeutic exercise session",
+   "rate": 65
+  },
+  "15820": {
+   "desc": "Cosmetic eyelid procedure",
+   "rate": 2400
+  }
+ },
+ "members": {
+  "M-US-1": {
+   "name": "John Carter",
+   "deductible_met": 1500,
+   "oop_met": 2000
+  },
+  "M-US-2": {
+   "name": "Maria Lopez",
+   "deductible_met": 1000,
+   "oop_met": 1500
+  },
+  "M-US-3": {
+   "name": "Dana Whitfield",
+   "deductible_met": 1500,
+   "oop_met": 3000
+  },
+  "M-US-4": {
+   "name": "Rafael Ortiz",
+   "deductible_met": 0,
+   "oop_met": 0
+  }
+ },
+ "auto_settle_max": 25000,
+ "above_tariff_ratio": 1.5,
+ "appeal_filing_days": 180,
+ "clock_note": "Illustrative. Appeal and turnaround clocks must be verified against current rules before any claim in a pitch.",
+ "reasons": {
+  "DEDUCTIBLE": {
+   "code": "PR-1",
+   "label": "Deductible applied",
+   "kind": "member_share",
+   "edit": "",
+   "member": "This amount counts toward your yearly deductible."
+  },
+  "COINSURANCE": {
+   "code": "PR-2",
+   "label": "Coinsurance applied",
+   "kind": "member_share",
+   "edit": "",
+   "member": "After your deductible, you share the cost with your plan."
+  },
+  "COPAY": {
+   "code": "PR-3",
+   "label": "Copayment applied",
+   "kind": "member_share",
+   "edit": "",
+   "member": "This visit has a fixed copayment."
+  },
+  "FEE_SCHEDULE": {
+   "code": "CO-45",
+   "label": "Charge exceeds contracted rate",
+   "kind": "contractual",
+   "edit": "Compare the billed charge with the contracted rate before submission.",
+   "member": "The provider agreed to accept the plan contracted rate, so you are not billed the difference."
+  },
+  "NOT_COVERED": {
+   "code": "CO-96",
+   "label": "Non-covered service",
+   "kind": "denial",
+   "edit": "Screen the procedure against plan exclusions before submission.",
+   "member": "This service is not covered by your plan."
+  },
+  "NO_AUTH": {
+   "code": "CO-197",
+   "label": "Authorization absent",
+   "kind": "denial",
+   "edit": "Check that a valid authorization is on file for this service before the claim is sent.",
+   "member": "This service needed approval before it was done, and none was on file."
+  },
+  "DUPLICATE": {
+   "code": "CO-18",
+   "label": "Duplicate claim or service",
+   "kind": "denial",
+   "edit": "Detect repeated service lines (same code, same date) before submission.",
+   "member": "This line repeats another line on the same claim."
+  }
+ },
+ "claims": [
+  {
+   "id": "CLM-US-1001",
+   "member": "M-US-1",
+   "provider": "Riverside Family Clinic",
+   "service_date": "2026-09-20",
+   "authorizations": [],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "99214",
+     "desc": "Office visit",
+     "service_key": "office_visit",
+     "qty": 1,
+     "billed": 220,
+     "date": "2026-09-20"
+    },
+    {
+     "id": "L2",
+     "code": "97110",
+     "desc": "Physical therapy session",
+     "service_key": "physical_therapy",
+     "qty": 1,
+     "billed": 90,
+     "date": "2026-09-20"
+    }
+   ]
+  },
+  {
+   "id": "CLM-US-1002",
+   "member": "M-US-2",
+   "provider": "Lakeview Orthopaedic Hospital",
+   "service_date": "2026-09-28",
+   "authorizations": [
+    {
+     "ref": "PA-US-1042",
+     "service_keys": [
+      "total_knee_replacement"
+     ]
+    }
+   ],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "27447",
+     "desc": "Total knee replacement",
+     "service_key": "total_knee_replacement",
+     "qty": 1,
+     "billed": 42000,
+     "date": "2026-09-28"
+    },
+    {
+     "id": "L2",
+     "code": "99214",
+     "desc": "Pre-operative visit",
+     "service_key": "office_visit",
+     "qty": 1,
+     "billed": 250,
+     "date": "2026-09-14"
+    }
+   ]
+  },
+  {
+   "id": "CLM-US-1003",
+   "member": "M-US-3",
+   "provider": "Metro Imaging Centre",
+   "service_date": "2026-09-30",
+   "authorizations": [],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "73721",
+     "desc": "MRI of the knee",
+     "service_key": "advanced_imaging",
+     "qty": 1,
+     "billed": 1400,
+     "date": "2026-09-30"
+    },
+    {
+     "id": "L2",
+     "code": "99214",
+     "desc": "Specialist visit",
+     "service_key": "office_visit",
+     "qty": 1,
+     "billed": 200,
+     "date": "2026-09-30"
+    }
+   ]
+  },
+  {
+   "id": "CLM-US-1004",
+   "member": "M-US-4",
+   "provider": "Sunrise Wellness Group",
+   "service_date": "2026-10-02",
+   "authorizations": [],
+   "lines": [
+    {
+     "id": "L1",
+     "code": "99214",
+     "desc": "Office visit",
+     "service_key": "office_visit",
+     "qty": 1,
+     "billed": 220,
+     "date": "2026-10-02"
+    },
+    {
+     "id": "L2",
+     "code": "99214",
+     "desc": "Office visit",
+     "service_key": "office_visit",
+     "qty": 1,
+     "billed": 220,
+     "date": "2026-10-02"
+    },
+    {
+     "id": "L3",
+     "code": "15820",
+     "desc": "Cosmetic eyelid procedure",
+     "service_key": "cosmetic",
+     "qty": 1,
+     "billed": 3200,
+     "date": "2026-10-02"
+    },
+    {
+     "id": "L4",
+     "code": "97110",
+     "desc": "Physical therapy session",
+     "service_key": "physical_therapy",
+     "qty": 1,
+     "billed": 400,
+     "date": "2026-10-02"
+    }
+   ]
+  }
+ ],
+ "parties": {
+  "insurer": "Gold PPO",
+  "tpa": null,
+  "grievance_office": "Appeals Department"
+ },
+ "escalation": [
+  {
+   "step": "Plan internal appeal",
+   "note": "Filed within the plan's appeal window.",
+   "verified": false
+  },
+  {
+   "step": "Independent external review",
+   "note": "Available after the internal appeal. Rules vary by plan and state.",
+   "verified": false
+  }
+ ]
+}

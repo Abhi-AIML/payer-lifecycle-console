@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer Lifecycle Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared.css">
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" style="display:none"></div>
+<script src="/shared.js"></script>
+<script src="/agents.js"></script>
+<script src="/module.js"></script>
+<script>
+let META, AI, K = null, CASES = [], APPEALS = [], PUB = null, AP = null;
+const UI = { picked: null, paste: "", showLetter: true, lens: "audit" };
+const lens = () => (AP ? AP.lens : UI.lens) || "audit";
+const AUD = () => lens() === "audit";
+const canWork = () => ME && ME.role === "claims_analyst";
+const STEPS = [["Claim", "Pick a decided claim"], ["Letter", "The letter under review"], ["Classify", "Agent 1 reads it"], ["Recheck", "Agent 2 tests it"], ["Draft", "Agent 3 writes it"], ["Approve", "A person approves"]];
+const VERDICT = { supported: ["ok", "Follows the rules"], overstated: ["bad", "Higher than the rules"], understated: ["warn", "Lower than the rules"], unmatched: ["bad", "Not in the rules"], other_reason: ["warn", "Different reason applies"] };
+const MERIT = { contest: { grounds: ["bad", "Grounds found"], contestable: ["warn", "Contestable, with evidence"], clarify: ["blue", "Ask for clarification"], none: ["ok", "No appeal suggested"] },
+  audit: { grounds: ["bad", "Correction needed before issue"], contestable: ["warn", "Confirm before issue"], clarify: ["warn", "Correct the reason before issue"], none: ["ok", "Cleared to issue"] } };
+const KIND = { member_share: ["mute", "Cost-sharing"], contractual: ["blue", "Contract"], reduction: ["warn", "Policy limit"], denial: ["bad", "Not payable"], unknown: ["mute", "Unknown"] };
+function money(n) { const c = META[MARKET].currency; return c.symbol + Number(n).toLocaleString(c.locale, { maximumFractionDigits: 2 }); }
+const cite = (clause, page) => clause ? `<span class="cite">cl. ${esc(clause)}${page ? " · p." + page : ""}</span>` : "";
+
+function chooseCard() {
+  const eligible = CASES.filter(c => ["explained", "decided"].includes(c.stage));
+  const picker = `<div class="docpick">${eligible.length ? `<div class="small muted"><b>Claims ready for a recheck.</b> These have been adjudicated and explained in the Claims module.</div>` : ""}
+    ${eligible.map(c => `<button class="pick" data-pick="${c.id}" aria-pressed="${UI.picked === c.id}">${ico("receipt")}<span><b>${esc(c.title)}</b><br><span class="small muted">${c.stage === "decided" ? "Decision recorded" : "Explained, awaiting decision"}</span></span>${c.outcome ? chip(c.outcome.replace("_", " "), "blue") : ""}${c.appeal ? chip("appeal open", "warn") : ""}</button>`).join("")
+      || `<div class="gate">No claim is ready yet. Open the <a href="/claims/?m=${MARKET}">Claims tile</a>, run the three agents on a claim, then come back.</div>`}
+    <div class="panel2" style="padding:14px 16px"><b>Who is using this?</b><div style="display:grid;gap:10px;margin-top:10px">
+      <label style="color:var(--ink);display:flex;gap:10px;align-items:flex-start"><input type="radio" name="lens" value="audit" ${UI.lens === "audit" ? "checked" : ""} style="width:auto;margin:4px 0 0"><span><b>Pre-issue audit</b> (insurer or TPA). The payment-integrity team rechecks a decision against the published rules <b>before</b> the letter goes out, and drafts a correction note if it is wrong.</span></label>
+      <label style="color:var(--ink);display:flex;gap:10px;align-items:flex-start"><input type="radio" name="lens" value="contest" ${UI.lens === "contest" ? "checked" : ""} style="width:auto;margin:4px 0 0"><span><b>Contest</b> (hospital billing desk or patient advocate). A decision that was <b>already issued</b> is checked, and an appeal or clarification request is drafted only if there is something to contest.</span></label></div></div>
+    <details><summary class="small" style="cursor:pointer;padding:6px 0"><b>Or paste a settlement letter you received</b> (optional)</summary>
+      <label style="margin-top:10px">Letter text<textarea id="paste" rows="6" placeholder="Paste the insurer's settlement or rejection letter. Without a pasted letter, the sample letter for the chosen claim is used.">${esc(UI.paste)}</textarea></label>
+      <div class="small muted">${AI.live ? "Gemini reads letters in other formats. Every amount it returns is checked against your text." : "Without a Gemini key only the demo letter format can be read."}</div></details>
+    <div class="row"><button class="btn primary" id="openappeal" ${canWork() && eligible.length ? "" : "disabled"}>${ico("upload")} Open workspace</button>${canWork() ? "" : `<span class="small muted">Only a claims analyst can open this. You can read everything.</span>`}${AP ? `<button class="btn" id="cancelchange">Keep the current one</button>` : ""}</div></div>`;
+  const summary = AP ? `<div class="row" style="gap:10px"><b style="font-size:16px">${esc(AP.case_title)}</b>${chip(AUD() ? "Pre-issue audit" : "Contest", "ai")}${chip(AP.letter_source === "pasted" ? "pasted letter" : "sample letter", "mute")}<span class="small muted">Claims-module outcome: ${esc(AP.case_outcome.replace("_", " "))}</span>
+    <span class="right row"><button class="btn sm" id="toggleletter">${UI.showLetter ? "Hide" : "Show"} the letter</button><button class="btn sm" id="changeappeal">Choose a different claim</button></span></div>
+    ${UI.showLetter ? `<pre class="code" style="max-height:none;white-space:pre-wrap;margin-top:14px">${esc(AP.letter)}</pre>` : ""}` : "";
+  return `<section class="agent ${AP ? "done" : "cur"}"><header><span class="num-badge">${AP ? "✓" : "1"}</span><div><h2>${AUD() ? "Claim and the decision as drafted" : "Claim and settlement letter"}</h2><div class="small muted">${AUD() ? "Starts from a claim adjudicated in the Claims module, with the decision letter the claims system drafted." : "Starts from a claim adjudicated in the Claims module, with the settlement letter the insurer issued."}</div></div></header>
+    <div class="body">${AP && !UI.changing ? summary : picker}</div></section>`;
+}
+
+function classifyCard() {
+  const key = "classify", ran = AP && AP.classify;
+  let body;
+  if (!AP) body = `<p class="muted">Open a workspace first.</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The Classification Agent is reading the letter…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It reads each deduction in the letter, checks every amount against the letter text, classifies the reason and root cause, and names the pre-emptive edit that would have prevented it.</p>`;
+  else {
+    const c = AP.classify;
+    body = `${logHtml(key, c.log)}<div data-results="${key}"${resultsAttr(key)}>
+      <div class="kv" style="margin-bottom:16px"><div><b>${c.summary.deductions}</b><span>deductions in the letter</span></div><div><b>${c.summary.verified}/${c.summary.deductions}</b><span>amounts found in the letter</span></div><div><b>${c.summary.unknown}</b><span>reasons not recognised</span></div>
+        <div><b>${c.payable == null ? "—" : money(c.payable)}</b><span>payable per the letter</span></div><div><b>${c.extractor === "gemini" ? "Gemini" : "Fallback"}</b><span>${c.extractor === "gemini" ? "read by the live model" : "rule-based reader, no Gemini key"}</span></div></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th>Deduction in the letter</th><th>Type</th><th>Root cause</th><th class="num">Amount</th></tr></thead><tbody>
+      ${c.items.map(i => `<tr><td><b>${esc(i.label)}</b> <span class="cite">${esc(i.code)}</span> ${cite(i.clause)}<div>${ev(i.amount_found, i.amount_found ? "Amount found in the letter" : "Amount NOT found in the letter")}</div></td><td>${chip(KIND[i.kind][1], KIND[i.kind][0])}</td><td class="small">${esc(i.root_cause)}</td><td class="num">${money(i.amount)}</td></tr>`).join("")}</tbody></table></div>
+      ${c.edits.length ? `<h3 style="margin:18px 0 8px">Pre-emptive edits that would have prevented these</h3><div class="panel2">${c.edits.map(e => `<div class="li" style="gap:10px;padding:7px 0"><span class="mk" style="background:var(--live-bg);color:var(--live-ink)">✓</span><span>${esc(e.edit)}<br><span class="small muted">Prevents: ${esc(e.for.join(", "))}</span></span></div>`).join("")}</div>` : ""}</div>`;
+  }
+  return `<section class="agent ${ran ? "done" : AP ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "2"}</span><div><h2>Classification Agent</h2><div class="small muted">Reads the letter, verifies the amounts, finds the root cause of each deduction.</div></div>
+    <span class="right">${runButton(key, canWork() && AP, "the Classification Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function recheckCard() {
+  const key = "recheck", ran = AP && AP.recheck, ready = AP && AP.classify;
+  let body;
+  if (!ready) body = `<p class="muted">Run the Classification Agent first.</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The Policy Recheck Agent is comparing the letter with the published rules…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. It compares each deduction with what the published rules produce for this claim. No AI is used. If every deduction follows the rules, it says so.</p>`;
+  else {
+    const r = AP.recheck, mt = MERIT[lens()][r.merit];
+    body = `${logHtml(key, r.log)}<div data-results="${key}"${resultsAttr(key)}>
+      ${AP.stale ? `<div class="gate" style="background:var(--rose-bg);color:var(--rose-ink)">The published rules changed since this check. Run it again.</div>` : ""}
+      <div class="row" style="margin-bottom:14px;gap:10px">${chip(mt[1], mt[0])}${chip(`Rules v${r.rule_version}`, "ok")}<span>${r.summary.supported} of ${r.summary.total} deductions follow the published rules.</span></div>
+      <div class="kv" style="margin-bottom:16px"><div><b>${money(r.letter_payable)}</b><span>payable per the letter</span></div><div><b class="${r.pay_diff > 1 ? "fail" : "pass"}">${money(r.rules_payable)}</b><span>payable per the published rules</span></div><div><b class="${r.pay_diff > 1 ? "fail" : ""}">${money(Math.max(0, r.pay_diff))}</b><span>possible shortfall</span></div></div>
+      <div class="scroll" style="margin-bottom:16px"><table class="tbl"><thead><tr><th>Deduction</th><th>Verdict</th><th>Clause</th><th class="num">Letter</th><th class="num">Rules</th></tr></thead><tbody>
+      ${r.verdicts.map(v => `<tr><td><b>${esc(v.label)}</b> <span class="cite">${esc(v.code)}</span></td><td>${chip(VERDICT[v.verdict][1], VERDICT[v.verdict][0])}</td><td>${cite(v.clause, v.page)}</td><td class="num">${money(v.letter)}</td><td class="num">${v.rules == null ? "—" : money(v.rules)}</td></tr>`).join("")}
+      ${r.not_in_letter.map(n => `<tr><td><b>${esc(n.label)}</b> <span class="cite">${esc(n.code)}</span></td><td>${chip("Not in the letter", "mute")}</td><td></td><td class="num">—</td><td class="num">${money(n.amount)}</td></tr>`).join("")}</tbody></table></div>
+      <h3 style="margin-bottom:8px">${r.grounds.length ? (AUD() ? "What to correct before issue" : "What could be contested") : "Result"}</h3>
+      ${r.grounds.length ? r.grounds.map(g => `<div class="rule" style="margin-bottom:10px"><div><div class="nm">${esc(g.title)}</div><div class="row" style="gap:8px;margin-top:4px">${chip({ strong: "Strong", possible: "Possible", info: "For information" }[g.strength], { strong: "bad", possible: "warn", info: "blue" }[g.strength])}${cite(g.clause, g.page)}</div></div><div class="q">${esc(g.text)}</div></div>`).join("")
+        : `<div class="panel2">${AUD() ? "Every deduction follows the published rules for this claim, so the decision is cleared to issue." : "Every deduction follows the published rules for this claim, so no appeal is suggested. The patient's share is explained by the clauses above."}</div>`}</div>`;
+  }
+  return `<section class="agent ${ran ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "3"}</span><div><h2>Policy Recheck Agent</h2><div class="small muted">Recomputes the claim from the published rules and compares it with the letter.</div></div>
+    <span class="right">${runButton(key, canWork() && ready, "the Policy Recheck Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function draftCard() {
+  const key = "draft", ran = AP && AP.draft, ready = AP && AP.recheck && !AP.stale;
+  let body;
+  if (!ready) body = `<p class="muted">Run the Policy Recheck Agent first.</p>`;
+  else if (AG.running === key) body = `<p class="muted"><span class="spin dark"></span> The ${AUD() ? "Correction" : "Appeal"} Drafting Agent is writing from the recheck facts…</p>`;
+  else if (!ran) body = `<p class="muted" style="margin-top:0">Click <b>Run agent</b>. ${AP.recheck.draft_type === "none" ? (AUD() ? "There are no findings, so the decision is cleared and no note is drafted." : "There are no grounds, so it will not draft an appeal.") : AUD() ? "It drafts a correction note to the adjudication team and lists what to keep on file." : `It drafts a${AP.recheck.draft_type === "clarification" ? " clarification request" : "n appeal"} to the ${esc(META[MARKET].terms.payer.split(" / ")[0].toLowerCase())}, lists the documents to enclose, and shows the escalation path.`}</p>`;
+  else {
+    const d = AP.draft, v = d.verification;
+    body = `${logHtml(key, d.log)}<div data-results="${key}"${resultsAttr(key)}>
+      ${d.letter ? `<div class="row" style="margin-bottom:10px;gap:10px">${chip(d.source === "gemini" ? "Written by Gemini" : "Template", d.source === "gemini" ? "ai" : "mute")}${chip({ clarification: "Clarification request", correction: "Correction note", appeal: "Appeal letter" }[d.draft_type], "blue")}${ev(v.amounts_ok, v.amounts_ok ? "Every amount is in the recheck facts" : "Unknown amounts: " + v.unknown_amounts.join(", "))}${ev(v.clauses_ok, v.clauses_ok ? "Every clause is in the recheck facts" : "Unknown clauses: " + v.unknown_clauses.join(", "))}</div>
+        ${d.note ? `<div class="gate">${esc(d.note)}</div>` : ""}<pre class="code" style="max-height:none;white-space:pre-wrap;margin-top:12px">${esc(d.letter)}</pre>
+        <h3 style="margin:18px 0 8px">${AUD() ? "Documents to keep on file" : "Documents to enclose"}</h3><div class="panel2">${AP.recheck.checklist.map(c => `<div class="li" style="gap:10px;padding:6px 0"><span class="mk" style="background:var(--soft)">☐</span><span>${esc(c)}</span></div>`).join("")}</div>
+        ${AUD() ? "" : `<h3 style="margin:18px 0 8px">If it is not resolved</h3><div class="panel2">${d.escalation.map((e, i) => `<div class="li" style="gap:10px;padding:7px 0;align-items:flex-start"><span class="mk" style="background:var(--soft)">${i + 1}</span><span><b>${esc(e.step)}</b> ${e.verified ? "" : chip("timeline not verified", "warn")}<br><span class="small muted">${esc(e.note)}</span></span></div>`).join("")}</div>
+        <p class="small muted" style="margin:10px 0 0">${esc(META[MARKET].clock_note)}</p>`}`
+      : `<div class="panel2">${AUD() ? "Cleared to issue. Every deduction follows the published rules, so no correction note is needed." : "No letter drafted. Every deduction follows the published rules, so there is nothing to contest. If the patient still disagrees, they can ask for the calculation behind the deductions above."}</div>`}</div>`;
+  }
+  return `<section class="agent ${ran ? "done" : ready ? "cur" : "locked"}"><header><span class="num-badge">${ran ? "✓" : "4"}</span><div><h2>${AUD() ? "Correction Drafting Agent" : "Appeal Drafting Agent"}</h2><div class="small muted">Drafts the ${AUD() ? "note" : "letter"} from the recheck facts. Code verifies every amount and clause.</div></div>
+    <span class="right">${runButton(key, canWork() && ready, AUD() ? "the Correction Drafting Agent" : "the Appeal Drafting Agent")}</span></header><div class="body">${body}</div></section>`;
+}
+
+function approveCard() {
+  const d = AP && AP.draft, ap = AP && AP.approval;
+  if (ap) return `<section class="agent done"><header><span class="num-badge">✓</span><div><h2>${AUD() ? "Approved to correct" : "Approved for sending"}</h2><div class="small muted">${esc({ clarification: "Clarification request", correction: "Correction note", appeal: "Appeal letter" }[ap.draft_type])} approved by ${esc(ap.by)}. This demo does not send anything outside the sandbox.</div></div></header>
+    <div class="body"><div class="row"><button class="btn" id="pushletter">${AUD() ? "Queue the note in the outbox" : "Queue the letter in the grievance outbox"}</button><a class="btn" href="/claims/?m=${MARKET}">Back to Claims</a><a class="btn" href="/console/?m=${MARKET}">Back to the console</a></div></div></section>`;
+  return `<section class="agent ${d && d.letter ? "cur" : "locked"}"><header><span class="num-badge">5</span><div><h2>${AUD() ? "Approve the note" : "Approve the letter"}</h2><div class="small muted">A person reads it, edits it if needed, and decides. Nothing is sent from this demo outside the sandbox.</div></div>
+    <span class="right"><button class="btn primary" id="approveletter" ${canWork() && d && d.letter ? "" : "disabled"}>${AUD() ? "Approve the note" : "Approve the letter"}</button></span></header><div class="body"><p class="muted" style="margin:0">${d && d.letter ? "Drafts are not legal advice. Check every clause against the current rules before relying on it." : "Something must be drafted first."}</p></div></section>`;
+}
+
+const CFG = {
+  uc: "denials", title: "Denial Mgmt & Appeals", sub: "4-step agent pipeline · human approval", onMarket: switchMarket,
+  get crumbs() { return [{ t: "Console", href: "/console/?m=" + MARKET }, { t: "Denial Mgmt, Redressal & Pre-emptive Edits" }]; },
+  groups: () => { const d = [!!(AP && AP.classify), !!(AP && AP.recheck), !!(AP && AP.draft), !!(AP && AP.approval)]; return [
+    { label: "Overview", items: [{ id: "overview", name: "Module overview", sub: "Stats and capabilities", icon: "grid" }] },
+    { label: "Agents", items: [
+      { id: "agent-1", num: 1, name: "Classification Agent", sub: "Letter to root causes", done: d[0] },
+      { id: "agent-2", num: 2, name: "Policy Recheck Agent", sub: "Recompute and compare", done: d[1] },
+      { id: "agent-3", num: 3, name: AUD() ? "Correction Drafting Agent" : "Appeal Drafting Agent", sub: AUD() ? "Draft only if findings" : "Draft only if grounds", done: d[2] },
+      { id: "agent-4", num: 4, name: AUD() ? "Approve the note" : "Approve the letter", sub: "A person approves", done: d[3] }] },
+    { label: "Reference tables", items: [
+      { id: "ref-reasons", name: "Reason codes", sub: "Meaning and prevention", icon: "table" },
+      { id: "ref-causes", name: "Root causes", sub: "Cause per reason", icon: "table" },
+      { id: "ref-escalation", name: "Escalation path", sub: "Where it goes next", icon: "table" }] },
+    { label: "Configuration", items: [{ id: "settings", name: "Settings", sub: "System connections", icon: "gear" }] }]; },
+  status: () => `${chip(AI.live ? `AI: Gemini (${AI.model})` : "AI: rule-based fallback, no Gemini key", AI.live ? "ai" : "mute")}${PUB ? chip(`Rules published: v${PUB.version}`, "ok") : chip("No rule set published", "warn")}${AP ? chip(`${AUD() ? "Audit" : "Contest"}: ${AP.case_title}`, "blue") : ""}`,
+  launch: () => { if (modView() === "agent-1") render(); else location.hash = "#agent-1"; },
+  views: {
+    overview: () => { const k = K.claims; return overviewHtml({ kicker: "Payer operations console — module overview", title: "Denial Mgmt, Redressal & Pre-emptive Edits",
+      desc: "Two lenses on one set of agents. Pre-issue audit: the insurer's or TPA's payment-integrity team rechecks a decision against the published rules before the letter goes out. Contest: a hospital billing desk or patient advocate checks a decision already issued. Either way the agent shows what the rules say. It never decides that an appeal will win.",
+      kpis: [[k.appeals_open, "Reviews open"], [k.deductions_total ? `${k.deductions_supported}/${k.deductions_total}` : "—", "Deductions that follow the published rules"], [k.letters_verified, "Letters that passed verification"]],
+      steps: [["Classification Agent", "Reads the decision letter, verifies every amount in its text, classifies each deduction, and names the root cause and the pre-emptive edit."],
+      ["Policy Recheck Agent", "No AI. Recomputes the claim from the published rules and compares each deduction with the letter. It can find an error, a point to confirm, a wrong reason, or nothing."],
+      ["Drafting Agent", "Audit lens: a correction note to the adjudication team. Contest lens: an appeal or clarification request with documents to enclose and the escalation path. Drafted from the recheck facts only, and code verifies every amount and clause. Nothing to fix, nothing drafted."],
+      ["Approval", "A person approves the note or letter. It can then be queued in the outbox. Nothing is sent from this demo outside the sandbox."]] }); },
+    "agent-1": () => stepper(STEPS, stepStates(doneFlags())) + `<div style="height:22px"></div>` + chooseCard() + classifyCard() + agentNav(null, ["agent-2", "Policy Recheck Agent"]),
+    "agent-2": () => ctxBar() + recheckCard() + agentNav(["agent-1", "Classification Agent"], ["agent-3", AUD() ? "Correction Drafting Agent" : "Appeal Drafting Agent"]),
+    "agent-3": () => ctxBar() + draftCard() + agentNav(["agent-2", "Policy Recheck Agent"], ["agent-4", AUD() ? "Approve the note" : "Approve the letter"]),
+    "agent-4": () => ctxBar() + approveCard() + agentNav(["agent-3", AUD() ? "Correction Drafting Agent" : "Appeal Drafting Agent"], null) }
+};
+const doneFlags = () => [!!AP, !!AP, !!(AP && AP.classify), !!(AP && AP.recheck), !!(AP && AP.draft), !!(AP && AP.approval)];
+const ctxBar = () => AP ? `<div class="row" style="margin-bottom:16px;gap:10px"><b>Working on</b>${chip(AP.case_title, "blue")}<a class="btn sm right" href="#agent-1">Change claim</a></div>` : `<div class="gate" style="margin:0 0 16px">No workspace is open. <a href="#agent-1">Open one on the Classification Agent page</a>.</div>`;
+function render() { Mod.render(CFG); bind(); }
+window.addEventListener("hashchange", () => { window.scrollTo(0, 0); render(); });
+
+function bind() {
+  $$("[data-run]").forEach(b => b.onclick = () => runAgent(b.dataset.run));
+  $$("[data-pick]").forEach(b => b.onclick = () => { UI.picked = +b.dataset.pick; render(); });
+  $$('input[name="lens"]').forEach(r => r.onchange = () => { UI.lens = r.value; render(); });
+  const pa = $("#paste"); if (pa) pa.oninput = () => { UI.paste = pa.value; };
+  const oa = $("#openappeal"); if (oa) oa.onclick = () => guard(async () => {
+    if (!UI.picked) throw new Error("Choose a claim first.");
+    AP = await post("/denials/appeals", { case_id: UI.picked, letter_text: UI.paste.trim() || null, lens: UI.lens }); UI.changing = false; UI.showLetter = true; render(); toast("Workspace opened. Now run the Classification Agent.");
+  });
+  const ch = $("#changeappeal"); if (ch) ch.onclick = () => { UI.changing = true; UI.picked = null; render(); };
+  const cn = $("#cancelchange"); if (cn) cn.onclick = () => { UI.changing = false; render(); };
+  const tl = $("#toggleletter"); if (tl) tl.onclick = () => { UI.showLetter = !UI.showLetter; render(); };
+  const pl = $("#pushletter"); if (pl) pl.onclick = () => guard(() => pushTo("denials", AP.case_id, AUD() ? "Note queued" : "Letter queued"));
+  const al = $("#approveletter"); if (al) al.onclick = () => guard(async () => { AP = await post(`/denials/appeals/${AP.case_id}/approve`); render(); toast("Approved. Nothing was sent."); });
+}
+function runAgent(key) { return runAgentWith(key, async () => { AP = await post(`/denials/appeals/${AP.case_id}/${key}`); }, render); }
+async function load() {
+  [META, CASES, APPEALS, PUB, AI, K] = await Promise.all([api("/meta"), api(`/claims/cases?market=${MARKET}`), api(`/denials/appeals?market=${MARKET}`), api(`/benefits/published?market=${MARKET}`), api("/ai/status"), api(`/kpis?market=${MARKET}`)]);
+  const want = +(new URLSearchParams(location.search).get("case") || 0);
+  const pick = APPEALS.find(a => a.case_id === want) || (want ? null : APPEALS[0]);
+  AP = pick ? await api(`/denials/appeals/${pick.case_id}`) : null;
+  if (!AP && want && CASES.some(c => c.id === want)) UI.picked = want;
+  UI.changing = false;
+  render();
+}
+function switchMarket() { AP = null; UI.picked = null; UI.changing = false; load(); }
+(async () => { try { await boot(); await load(); } catch (e) { if (e.message !== "wrong role" && e.message !== "Please sign in.") document.body.insertAdjacentHTML("afterbegin", `<div class="wrap" style="padding-block:30px">Could not load: ${esc(e.message)}</div>`); } })();
+</script>
+</body>
+</html>
